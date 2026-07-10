@@ -1,6 +1,6 @@
 # gpu-burst 产品文档
 
-> 状态：设计完成，尚未实现。当前唯一承诺范围是 song-cards 云端批处理 MVP。
+> 状态：Phase 1 本地 CLI 骨架已实现；song-cards 云端批处理 MVP 尚未实现。
 >
 > 更新日期：2026-07-10
 
@@ -21,7 +21,7 @@ gpu-burst logs <task_id>
 gpu-burst cancel <task_id>
 ```
 
-这些命令均为目标接口；在实现与验证完成前，其状态为 `planned`。
+当前已实现的范围是本地 Phase 1：`doctor`、`quote` 的 fake-cloud 估算、`run --dry-run`、`status`、`logs` 和本地 `cancel` 事件记录。真实 Vast/R2/ComfyUI 付费运行仍是 `planned`。
 
 ## 2. 要解决的问题
 
@@ -94,6 +94,7 @@ gpu-burst 的价值不是“让模型跑起来”，而是让现有任务以可�
 
 | 能力 | 当前状态 | 晋级条件 |
 |---|---|---|
+| gpu-burst 本地 CLI 骨架 | `experimental` | 默认测试通过，可生成本地 dry-run ledger；尚未触达云端 |
 | comfy-batch 本地生图 | `reference` | 已有 50 张 song-cards 上线记录；gpu-burst 不把它冒充为云端验证 |
 | song-cards 云端 1 张闭环 | `planned` | 产物、manifest、账单、自动销毁全部通过 |
 | song-cards 20 张批量 | `planned` | 单张闭环与故障演练通过后，逐项恢复无重复生成 |
@@ -221,8 +222,8 @@ doctor
 
 ## 10. 路线图
 
-1. 文档与 schema；
-2. `doctor` 与 `--dry-run`；
+1. ✅ 文档与 schema；
+2. ✅ 本地 `doctor`、fake-cloud `quote`、`run --dry-run`、ledger、status/logs；
 3. Vast hello-world；
 4. song-cards 单张；
 5. 20 张批量与故障恢复；

@@ -1,6 +1,6 @@
 # gpu-burst 技术文档
 
-> 状态：目标架构。仓库当前尚无运行代码；本文定义第一阶段实现契约与验证边界。
+> 状态：目标架构 + Phase 1 本地骨架。仓库已有本地 CLI、schema、ledger、quote 和测试；云端 provider、R2 探针、ComfyUI 执行仍未实现。
 >
 > 更新日期：2026-07-10
 
@@ -612,7 +612,7 @@ GPU_BURST_LIVE=1 gpu-burst run --confirm-paid tasks/song-cards.example.json
 - `doctor` 与 `--dry-run`；
 - fake provider 和测试。
 
-完成条件：不需要云凭证即可通过全部 unit/contract 测试并生成可审查 manifest。
+当前状态：已实现。完成条件是不需要云凭证即可通过全部 unit/contract 测试并生成可审查 manifest。
 
 ### Phase 2：Vast hello-world
 

@@ -14,7 +14,7 @@
 
 ## 文档
 
-当前仓库处于**设计完成、尚未实现**阶段。README 用于快速理解方向，详细契约以以下文档为准：
+当前仓库处于**Phase 1 本地骨架已实现、云端付费闭环尚未实现**阶段。README 用于快速理解方向，详细契约以以下文档为准：
 
 - [产品文档](docs/product.md)：用户、范围、MVP 验收门槛、指标和路线图
 - [技术文档](docs/technical.md)：架构、任务协议、状态机、数据隔离、成本和测试策略
@@ -33,12 +33,20 @@
 CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 cron / CI / 手动调试）：
 
 ```
-gpu-burst run song-cards tasks/song-cards.json
+gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-第一阶段目标子命令：`doctor` / `quote`（实时报价 + 预算上限）/ `run` / `status` / `logs` / `cancel`。这些接口均为 `planned`，尚无可运行实现。
+Phase 1 已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）。真实 Vast/R2/ComfyUI 付费执行仍未实现，`run --confirm-paid` 不会创建实例。
 
-背后自动：**比价租机 → 从 R2 拉权重/输入 → 跑任务 → 回传结果 → 销毁机器 → 记账**
+本地验证：
+
+```bash
+uv run gpu-burst doctor
+uv run gpu-burst quote song-cards tasks/song-cards.example.json
+uv run gpu-burst run song-cards --dry-run tasks/song-cards.example.json
+```
+
+云端目标行为：**比价租机 → 从 R2 拉权重/输入 → 跑任务 → 回传结果 → 销毁机器 → 记账**
 
 Claude Skill 只做一层薄壳：自然语言 → CLI 参数。
 
@@ -46,7 +54,7 @@ Claude Skill 只做一层薄壳：自然语言 → CLI 参数。
 
 | 管线 | 引擎 | GPU 需求 | 当前成熟度 | 成本假设 |
 |---|---|---|---|---|
-| 歌词卡生图 | ComfyUI (FLUX/Qwen) | 4090 | `planned`，唯一 MVP | $1–3 / 批 |
+| 歌词卡生图 | ComfyUI (FLUX/Qwen) | 4090 | 本地 CLI `experimental`，云端闭环 `planned` | $1–3 / 批 |
 | 词典 OCR | PaddleOCR-VL / MinerU | 4090 | `reference` | $2–8 一次性 |
 | 播客配音 | podcast-dub | 4090 | `reference` | ~$0.5 / 集 |
 | 采访音频入库 | whisper + 说话人分离 → 转写/切片/标注 | 4090 | `planned`，非 MVP | ~$0.3–0.5 / 小时音频 |
@@ -110,18 +118,19 @@ gpu-burst/
 ## 路线图
 
 1. ✅ 调研选型（2026-07-10）
-2. ⬜ `gpu-burst doctor`：uv 建 Python 3.13 环境 + skypilot\[vast\]==0.12.3.post1 + vastai + s5cmd + 凭证检查
-3. ⬜ hello-world：`sky launch` 跑 `nvidia-smi`，单独验证创建→执行→远端 autodown→Vast 账单（与 ComfyUI 问题解耦）
-4. ⬜ 最小闭环（7 天时间盒，只做 song-cards 一条管线），验收标准：
+2. ✅ Phase 1 本地骨架：uv / Python 3.13 项目、schema、ledger、状态机、redaction、`doctor`、`quote`、`run --dry-run`、fake provider 和测试
+3. ⬜ `gpu-burst doctor` 付费运行检查补齐：skypilot\[vast\]==0.12.3.post1 + vastai + s5cmd + 凭证可用性 + R2 探针
+4. ⬜ hello-world：`sky launch` 跑 `nvidia-smi`，单独验证创建→执行→远端 autodown→Vast 账单（与 ComfyUI 问题解耦）
+5. ⬜ 最小闭环（7 天时间盒，只做 song-cards 一条管线），验收标准：
    - 1 张图：R2 拉模型/输入 → 回传结果 → 自动销毁 → 成本入账
    - 故障演练：本地 CLI 中断 / 任务失败 / 凭证过期，实例仍被销毁
    - 幂等重跑：已完成图片不重复生成；task manifest 最小字段：task_id、输入 URI + SHA-256、镜像 digest、阶段状态、预算/实际费用
    - 全部通过后才扩到 20 张批量
-5. ⬜ 采访音频管线（数据积累不等人；数据目录先设计，不与 MVP 绑定）
-6. ⬜ OCR：先本地跑 10 页基准（流式拼音 / 纯表格 / 复杂表格），记录每页耗时、异常规则召回、声调/字符错误与人工复核量；验证 hybrid_ocr 后再按冷启动盈亏决定是否上云
-7. ⬜ 配音迁移：podcast-dub 本地 16GB 够用（其 README 自述），仅当排队 / 采访季吞吐压力出现才迁，价值是并发和释放本机
-8. ⬜ 封装成 Claude Skill（CLI 稳定后再包壳）
-9. ⬜ 训练管线（等潮汕 v1 音节录音 / 语料到位后启动；Vast 无多机，按单机微调设计，需多机另评 RunPod Clusters / Lambda 等）
+6. ⬜ 采访音频管线（数据积累不等人；数据目录先设计，不与 MVP 绑定）
+7. ⬜ OCR：先本地跑 10 页基准（流式拼音 / 纯表格 / 复杂表格），记录每页耗时、异常规则召回、声调/字符错误与人工复核量；验证 hybrid_ocr 后再按冷启动盈亏决定是否上云
+8. ⬜ 配音迁移：podcast-dub 本地 16GB 够用（其 README 自述），仅当排队 / 采访季吞吐压力出现才迁，价值是并发和释放本机
+9. ⬜ 封装成 Claude Skill（CLI 稳定后再包壳）
+10. ⬜ 训练管线（等潮汕 v1 音节录音 / 语料到位后启动；Vast 无多机，按单机微调设计，需多机另评 RunPod Clusters / Lambda 等）
 
 ## 安全与保险丝
 

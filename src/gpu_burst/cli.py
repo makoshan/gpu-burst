@@ -15,7 +15,7 @@ from gpu_burst.doctor import build_report, exit_code
 from gpu_burst.ledger import Ledger, utc_now
 from gpu_burst.lifecycle import ItemState, TaskState
 from gpu_burst.manifests import TaskSpec, item_key, load_task_json, validate_for_run
-from gpu_burst.providers.skypilot import SkyLaunchPlan
+from gpu_burst.providers.skypilot import SkyExecutionError, SkyLaunchPlan, execute_sky_launch
 from gpu_burst.quote import build_quote
 from gpu_burst.safety.watchdog import scan_stale_tasks
 
@@ -165,8 +165,6 @@ def hello_world(
         raise typer.Exit(2)
     if confirm_paid:
         _require_live_ready()
-        typer.echo("Paid hello-world launch is still blocked until provider execution is implemented.")
-        raise typer.Exit(2)
 
     settings = load_settings()
     task_id = _new_task_id("hello-world")
@@ -181,8 +179,7 @@ def hello_world(
         "task_state": TaskState.QUOTED,
         "created_at": utc_now(),
         "updated_at": utc_now(),
-        "dry_run": True,
-        "dry_run_state": "SUCCEEDED",
+        "dry_run": dry_run,
         "provider": {
             "name": "skypilot-vast",
             "cluster_name": cluster_name,
@@ -201,8 +198,39 @@ def hello_world(
     ledger.create_task(task_id, {"task_id": task_id, "workload": "hello-world"})
     ledger.append_event(task_id, "CREATED", {"phase": "hello-world"})
     ledger.append_event(task_id, "PLANNED", {"cluster_name": cluster_name})
+    if dry_run:
+        manifest["dry_run_state"] = "SUCCEEDED"
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "DRY_RUN_COMPLETE", {"dry_run_state": "SUCCEEDED"})
+        _emit_json(manifest)
+        return
+
+    manifest["task_state"] = TaskState.PROVISIONING
+    manifest["updated_at"] = utc_now()
     ledger.write_manifest(task_id, manifest)
-    ledger.append_event(task_id, "DRY_RUN_COMPLETE", {"dry_run_state": "SUCCEEDED"})
+    ledger.append_event(task_id, "PROVISIONING", {"cluster_name": cluster_name})
+
+    def record_teardown() -> None:
+        manifest["task_state"] = TaskState.TEARING_DOWN
+        manifest["updated_at"] = utc_now()
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "TEARING_DOWN", {"cluster_name": cluster_name})
+
+    try:
+        execute_sky_launch(plan, on_teardown=record_teardown)
+    except SkyExecutionError as exc:
+        manifest["task_state"] = TaskState.FAILED
+        manifest["updated_at"] = utc_now()
+        manifest["error"] = str(exc)
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "FAILED", {"error": str(exc)})
+        typer.echo(str(exc))
+        raise typer.Exit(1) from exc
+
+    manifest["task_state"] = TaskState.SUCCEEDED
+    manifest["updated_at"] = utc_now()
+    ledger.write_manifest(task_id, manifest)
+    ledger.append_event(task_id, "SUCCEEDED", {"cluster_name": cluster_name})
     _emit_json(manifest)
 
 

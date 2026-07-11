@@ -36,7 +36,7 @@ CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 c
 gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world --dry-run` / `watchdog --dry-run`。真实 Vast/R2/ComfyUI 付费执行仍未实现；所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。`doctor` 会拒绝无效 TOML、空密钥及组/其他用户可读的 Vast key；watchdog 会在 `scan_errors` 中隔离报告损坏的 ledger manifest。
+已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run`。`hello-world --confirm-paid` 已具备 SkyPilot launch/finally down 生命周期，但仍属 experimental，尚未完成 Vast API 销毁复核和账单关联；song-cards 的自动化云端执行仍未实现。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
 
 本地验证：
 
@@ -122,8 +122,8 @@ gpu-burst/
 1. ✅ 调研选型（2026-07-10）
 2. ✅ Phase 1 本地骨架：uv / Python 3.13 项目、schema、ledger、状态机、redaction、`doctor`、`quote`、`run --dry-run`、fake provider 和测试
 3. ✅ Phase 2 非付费准备：TOML 配置读取、`hello-world --dry-run` SkyPilot 命令计划、`GPU_BURST_LIVE=1` 付费门、`watchdog --dry-run` 本地 stale task 扫描
-4. ⬜ `gpu-burst doctor` 付费运行检查补齐：skypilot\[vast\]==0.12.3.post1 + vastai + s5cmd + 凭证可用性 + R2 探针
-5. ⬜ hello-world live：`sky launch` 跑 `nvidia-smi`，单独验证创建→执行→远端 autodown→Vast 账单（与 ComfyUI 问题解耦）
+4. ✅ `gpu-burst doctor` 付费运行本地检查：SkyPilot + vastai + s5cmd + 凭证语义 + R2 配置
+5. 🟨 hello-world live：已实现受保护的 `sky launch` → remote autodown → finally `sky down`；待真实 CLI 运行、Vast API 销毁复核和账单关联
 6. ⬜ 最小闭环（7 天时间盒，只做 song-cards 一条管线），验收标准：
    - 1 张图：R2 拉模型/输入 → 回传结果 → 自动销毁 → 成本入账
    - 故障演练：本地 CLI 中断 / 任务失败 / 凭证过期，实例仍被销毁

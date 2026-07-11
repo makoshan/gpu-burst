@@ -21,7 +21,7 @@ gpu-burst logs <task_id>
 gpu-burst cancel <task_id>
 ```
 
-当前已实现的范围是本地 Phase 1 加 Phase 2 非付费准备：`doctor`、`quote` 的 fake-cloud 估算、`run --dry-run`、`status`、`logs`、本地 `cancel` 事件记录、`hello-world --dry-run` 命令计划和 `watchdog --dry-run` stale task 扫描。真实 Vast/R2/ComfyUI 付费运行仍是 `planned`，所有付费入口均被 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` readiness 共同保护；hello-world 计划会保存资源/安全策略快照以便审计。
+当前已实现本地 Phase 1 和受保护的 hello-world 生命周期：`doctor`、fake-cloud `quote`、`run --dry-run`、status/logs、本地 cancel、hello-world dry-run/live 入口，以及 watchdog dry-run。live hello-world 会在 finally 路径执行 `sky down`，但仍缺 Vast API 销毁复核和账单关联；song-cards 自动云端执行仍是 `planned`。
 
 ## 2. 要解决的问题
 
@@ -95,7 +95,7 @@ gpu-burst 的价值不是“让模型跑起来”，而是让现有任务以可�
 | 能力 | 当前状态 | 晋级条件 |
 |---|---|---|
 | gpu-burst 本地 CLI 骨架 | `experimental` | 默认测试通过，可生成本地 dry-run ledger；尚未触达云端 |
-| Vast hello-world 非付费准备 | `experimental` | 已生成 SkyPilot 命令计划和本地 watchdog 扫描；尚未创建真实 Vast 实例 |
+| Vast hello-world 生命周期 | `experimental` | 手工云端烟测已完成；CLI 已有 guarded launch/finally down，待真实 CLI 故障演练、Vast 销毁复核和账单关联 |
 | comfy-batch 本地生图 | `reference` | 已有 50 张 song-cards 上线记录；gpu-burst 不把它冒充为云端验证 |
 | song-cards 云端 1 张闭环 | `planned` | 产物、manifest、账单、自动销毁全部通过 |
 | song-cards 20 张批量 | `planned` | 单张闭环与故障演练通过后，逐项恢复无重复生成 |
@@ -226,7 +226,7 @@ doctor
 1. ✅ 文档与 schema；
 2. ✅ 本地 `doctor`、fake-cloud `quote`、`run --dry-run`、ledger、status/logs；
 3. ✅ Vast hello-world 非付费准备：dry-run plan、live gate、local watchdog；
-4. Vast hello-world live；
+4. 🟨 Vast hello-world live 生命周期已实现，待真实 CLI 验证、销毁复核与账单；
 5. song-cards 单张；
 6. 20 张批量与故障恢复；
 7. 基于真实账单修正 quote；

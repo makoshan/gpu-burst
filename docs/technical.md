@@ -434,9 +434,9 @@ cancel 先写 `CANCEL_REQUESTED` 事件，再取消 workload、请求 `sky down`
 
 - `GPU_BURST_LIVE=1`；
 - `doctor` 返回 `paid_runtime_ready=true`；
-- 后续 live provider 实现存在。
+- SkyPilot/Vast 本地依赖和凭证检查通过。
 
-当前实现会在通过前两道门后仍拒绝付费 launch，直到 SkyPilot/Vast 真实执行、销毁核验与账单记录完成。
+当前实现通过参数数组执行 `sky launch`，同时设置 `--idle-minutes-to-autostop <minutes> --down`，并在 finally 路径显式执行 `sky down -y <cluster>`。launch/down 输出不会进入 CLI 错误或 ledger。任务在 teardown 开始前写入 `TEARING_DOWN`，最终写入 `SUCCEEDED` 或 `FAILED`。Vast API 独立销毁复核与账单记录尚未实现，因此仍是 experimental。
 
 ### 9.6 watchdog
 
@@ -639,7 +639,7 @@ GPU_BURST_LIVE=1 gpu-burst run --confirm-paid tasks/song-cards.example.json
 - remote autodown、finally down、watchdog；
 - `nvidia-smi` 及三种故障演练。
 
-当前状态：非付费准备已实现，包括 TOML 配置、`sky/hello-world.yaml`、SkyPilot launch/down 参数数组、`hello-world --dry-run`、`GPU_BURST_LIVE=1` live gate 和 `watchdog --dry-run` 本地 stale task 扫描。真实 Vast 实例创建、`nvidia-smi`、Vast 销毁核验和账单关联尚未执行。
+当前状态：受保护的 live 生命周期已实现，包括正确的 SkyPilot idle-autostop/down 参数、显式 finally down、清理前状态落盘和净化错误。手工 Vast `nvidia-smi`/ComfyUI 烟测已经成功且实例已销毁；仍需用 CLI 完成真实故障演练、Vast API 销毁复核和账单关联。
 
 完成条件：正常、CLI 中断和远端命令失败均能在销毁 SLA 内确认实例消失。
 

@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 
 from gpu_burst.cli import app
 from gpu_burst.ledger import Ledger
+from gpu_burst.providers.skypilot import SkyExecutionError
 from tests.unit.test_manifests import valid_task_dict
 
 
@@ -131,6 +132,52 @@ def test_cli_hello_world_confirm_paid_requires_live_env(tmp_path, monkeypatch) -
 
     assert result.exit_code == 2
     assert "GPU_BURST_LIVE=1" in result.stdout
+
+
+def test_cli_hello_world_confirm_paid_executes_and_records_success(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_LIVE", "1")
+    monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+    executed = []
+
+    def execute(plan, *, on_teardown):
+        executed.append(plan)
+        on_teardown()
+
+    monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", execute)
+
+    result = runner.invoke(app, ["hello-world", "--confirm-paid"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["task_state"] == "SUCCEEDED"
+    assert payload["dry_run"] is False
+    assert len(executed) == 1
+    events = Ledger(home).read_events(payload["task_id"])
+    assert [event["event"] for event in events][-2:] == ["TEARING_DOWN", "SUCCEEDED"]
+
+
+def test_cli_hello_world_confirm_paid_records_sanitized_failure(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_LIVE", "1")
+    monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+
+    def fail(_plan, *, on_teardown):
+        on_teardown()
+        raise SkyExecutionError("sky launch failed")
+
+    monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", fail)
+
+    result = runner.invoke(app, ["hello-world", "--confirm-paid"])
+
+    assert result.exit_code == 1
+    assert "sky launch failed" in result.stdout
+    task_dirs = list((home / "tasks").iterdir())
+    manifest = Ledger(home).read_manifest(task_dirs[0].name)
+    assert manifest["task_state"] == "FAILED"
+    assert manifest["error"] == "sky launch failed"
 
 
 def test_cli_watchdog_dry_run_reports_stale_tasks(tmp_path, monkeypatch) -> None:

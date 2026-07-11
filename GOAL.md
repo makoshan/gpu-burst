@@ -2,8 +2,8 @@
 
 ## Goal
 
-Implement the remaining non-paid control-plane work needed before the first
-Vast hello-world run.
+Implement the guarded Vast hello-world lifecycle needed to turn the already
+verified manual cloud smoke into a repeatable CLI operation.
 
 The user-visible outcome is a CLI that can still run Phase 1 dry-runs, plus a
 guarded Phase 2 hello-world path that can plan SkyPilot execution, enforce live
@@ -12,11 +12,12 @@ execution unless the explicit live prerequisites are present.
 
 ## Non-goals
 
-- No paid Vast.ai instance creation without an explicit follow-up run with
+- No paid Vast.ai instance creation without an explicit run with
   `GPU_BURST_LIVE=1`, `--confirm-paid`, working paid-runtime tools, and
   credentials.
 - No real R2 object writes without live credentials.
-- No ComfyUI or comfy-batch cloud image execution in this slice.
+- No ComfyUI or comfy-batch cloud image execution in this slice; this slice
+  only runs the isolated `nvidia-smi` hello-world workload.
 - No public publishing flow.
 
 ## Success Criteria
@@ -39,6 +40,9 @@ execution unless the explicit live prerequisites are present.
   entire safety scan.
 - Hello-world manifests retain the resource and safety policy used to create
   the plan.
+- A paid hello-world launch records lifecycle state and always attempts an
+  explicit `sky down`, including when `sky launch` fails.
+- Provider command output is not echoed into CLI errors or ledger events.
 
 ## Architecture / Approach
 
@@ -49,6 +53,8 @@ execution unless the explicit live prerequisites are present.
   overriding the location in tests and development.
 - Use append-only JSONL events and atomic JSON snapshot writes.
 - Keep workload scope to `song-cards`.
+- Execute SkyPilot through an injectable argument-array runner so cleanup and
+  error paths are testable without cloud access.
 
 ## Progress Log
 
@@ -80,6 +86,12 @@ execution unless the explicit live prerequisites are present.
   the live readiness gate, doctor validates configuration/key semantics and
   permissions, watchdog isolates corrupt entries, and hello-world persists a
   policy snapshot.
+- 2026-07-11: Started guarded live hello-world lifecycle implementation after
+  the manual Vast/R2/ComfyUI smoke succeeded and all test instances were
+  destroyed.
+- 2026-07-11: Implemented guarded SkyPilot execution with correct idle-autostop
+  syntax, explicit finally-down cleanup, sanitized failures, teardown state
+  callbacks, and CLI success/failure ledger snapshots.
 
 ## Verification
 
@@ -117,7 +129,20 @@ execution unless the explicit live prerequisites are present.
   - `watchdog --dry-run --max-age-minutes 1` returned both `stale_tasks` and
     `scan_errors` without provider side effects.
   - Old contradictory status wording scan found no matches.
-- New remaining-work verification pending.
+- Guarded live lifecycle TDD red runs confirmed missing executor behavior,
+  incorrect `--down 10` syntax, missing CLI state handling, and cleanup loss
+  when the teardown callback failed.
+- Final guarded lifecycle verification:
+  - `uv lock --check` exited 0.
+  - `uv run pytest -q` passed: 44 tests passed.
+  - `uv run python -m compileall -q src tests` exited 0.
+  - `uv build --out-dir /tmp/gpu-burst-dist-live-lifecycle-final` built the
+    sdist and wheel.
+  - `git diff --check` exited 0.
+  - `hello-world --dry-run` emitted
+    `--idle-minutes-to-autostop 5 --down` and a separate `sky down` plan.
+  - `vastai show instances-v1 --raw` reported zero instances.
+  - High-risk credential pattern scan found no matches.
 - New TDD red run failed as expected: missing `Settings`, `providers`, and
   `safety` modules.
 - `uv run pytest tests/unit/test_config.py tests/unit/test_skypilot_provider.py
@@ -149,13 +174,17 @@ execution unless the explicit live prerequisites are present.
   `uv` has Python 3.13.5 available locally.
 - Phase 1 intentionally does not install or call SkyPilot/Vast/R2 live provider
   paths. `doctor` surfaces missing paid-runtime dependencies as exit code 2.
-- Completing the true Vast hello-world live run is blocked until paid-runtime
-  tools and credentials exist and Mako explicitly authorizes a paid run.
+- Paid-runtime tools and credentials are configured locally and a manual Vast
+  smoke has succeeded. Development remains non-paid; a new paid CLI run still
+  requires Mako's explicit invocation.
 - The live guard is intentionally stricter than `--confirm-paid` alone:
   `GPU_BURST_LIVE=1` and a ready `doctor` are both required.
 
 ## Final Review
 
 - Post-review hardening success criteria are implemented and verified.
-- The first true paid Vast hello-world run is still blocked by missing
-  paid-runtime tools/credentials and requires explicit live execution.
+- Guarded live hello-world code is implemented and locally verified without
+  creating paid resources.
+- Remaining gates are deliberately separate: run the new CLI path once against
+  Vast, add independent Vast API destruction verification, and correlate the
+  resulting charge. Song-cards automation remains Phase 3.

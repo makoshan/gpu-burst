@@ -104,6 +104,7 @@ def test_cli_doctor_does_not_print_secret_values(tmp_path, monkeypatch) -> None:
 def test_cli_hello_world_dry_run_writes_command_plan(tmp_path, monkeypatch) -> None:
     home = tmp_path / "home"
     monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_CONFIG", str(tmp_path / "missing-config.toml"))
 
     result = runner.invoke(app, ["hello-world", "--dry-run"])
 

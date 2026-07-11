@@ -20,6 +20,12 @@ datacenter_only = false
 max_hourly_cost_usd = 0.55
 default_gpu = "RTX4090"
 
+[storage]
+cache_bucket = "gpu-burst-cache-dev"
+jobs_bucket = "gpu-burst-jobs-dev"
+endpoint = "https://example.r2.cloudflarestorage.com"
+aws_profile = "gpu-burst-r2-dev"
+
 [safety]
 autodown_idle_minutes = 7
 watchdog_interval_minutes = 3
@@ -33,5 +39,8 @@ max_unverified_age_minutes = 11
 
     assert settings.provider.vast.datacenter_only is False
     assert settings.provider.vast.max_hourly_cost_usd == 0.55
+    assert settings.storage.cache_bucket == "gpu-burst-cache-dev"
+    assert settings.storage.jobs_bucket == "gpu-burst-jobs-dev"
+    assert settings.storage.endpoint == "https://example.r2.cloudflarestorage.com"
+    assert settings.storage.aws_profile == "gpu-burst-r2-dev"
     assert settings.safety.autodown_idle_minutes == 7
-

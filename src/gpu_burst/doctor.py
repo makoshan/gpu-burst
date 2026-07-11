@@ -3,12 +3,13 @@ from __future__ import annotations
 import shutil
 import sys
 import tomllib
+from configparser import ConfigParser
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from gpu_burst import __version__
-from gpu_burst.config import Settings, user_config_file, vast_api_key_file
+from gpu_burst.config import Settings, aws_credentials_file, user_config_file, vast_api_key_file
 
 
 class DoctorCheck(BaseModel):
@@ -45,6 +46,47 @@ def _config_check(path: Path) -> DoctorCheck:
     return DoctorCheck(name="config.toml", status="present", detail=str(path))
 
 
+def _r2_storage_check(config_path: Path, credentials_path: Path) -> DoctorCheck:
+    if not config_path.exists():
+        return DoctorCheck(name="r2_storage", status="missing", detail=f"{config_path}: config.toml missing")
+    try:
+        with config_path.open("rb") as handle:
+            settings = Settings.model_validate(tomllib.load(handle))
+    except (OSError, tomllib.TOMLDecodeError, ValidationError):
+        return DoctorCheck(name="r2_storage", status="invalid", detail=f"{config_path}: invalid configuration")
+
+    storage = settings.storage
+    if not storage.endpoint.strip():
+        return DoctorCheck(name="r2_storage", status="invalid", detail="storage.endpoint is required")
+    if not storage.cache_bucket.strip():
+        return DoctorCheck(name="r2_storage", status="invalid", detail="storage.cache_bucket is required")
+    if not storage.jobs_bucket.strip():
+        return DoctorCheck(name="r2_storage", status="invalid", detail="storage.jobs_bucket is required")
+    if not storage.aws_profile.strip():
+        return DoctorCheck(name="r2_storage", status="invalid", detail="storage.aws_profile is required")
+    if not credentials_path.exists():
+        return DoctorCheck(name="r2_storage", status="missing", detail=f"{credentials_path}: AWS credentials missing")
+
+    parser = ConfigParser()
+    try:
+        parser.read(credentials_path)
+    except (OSError, UnicodeError):
+        return DoctorCheck(name="r2_storage", status="invalid", detail=f"{credentials_path}: unreadable")
+
+    if not parser.has_section(storage.aws_profile):
+        return DoctorCheck(
+            name="r2_storage",
+            status="invalid",
+            detail=f"{credentials_path}: missing AWS profile {storage.aws_profile}",
+        )
+
+    return DoctorCheck(
+        name="r2_storage",
+        status="present",
+        detail=f"profile={storage.aws_profile} endpoint={storage.endpoint} buckets={storage.cache_bucket},{storage.jobs_bucket}",
+    )
+
+
 def _vast_key_check(path: Path) -> DoctorCheck:
     if not path.exists():
         return DoctorCheck(name="vast_api_key", status="missing", detail=str(path))
@@ -64,6 +106,7 @@ def _vast_key_check(path: Path) -> DoctorCheck:
 
 
 def build_report() -> DoctorReport:
+    config_path = user_config_file()
     checks = [
         DoctorCheck(
             name="python",
@@ -75,7 +118,8 @@ def build_report() -> DoctorReport:
         _tool_check("vastai"),
         _tool_check("s5cmd"),
         _tool_check("docker"),
-        _config_check(user_config_file()),
+        _config_check(config_path),
+        _r2_storage_check(config_path, aws_credentials_file()),
         _vast_key_check(vast_api_key_file()),
     ]
     paid_ready = all(check.status == "present" for check in checks)

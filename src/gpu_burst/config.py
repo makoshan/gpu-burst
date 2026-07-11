@@ -27,6 +27,7 @@ class StorageSettings(BaseModel):
     cache_bucket: str = "gpu-burst-cache"
     jobs_bucket: str = "gpu-burst-jobs"
     endpoint: str = ""
+    aws_profile: str = "gpu-burst-r2"
 
 
 class SafetySettings(BaseModel):
@@ -67,6 +68,13 @@ def user_config_file() -> Path:
     if override:
         return Path(override).expanduser()
     return Path.home() / ".config" / "gpu-burst" / "config.toml"
+
+
+def aws_credentials_file() -> Path:
+    override = os.environ.get("AWS_SHARED_CREDENTIALS_FILE")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".aws" / "credentials"
 
 
 def load_settings() -> Settings:

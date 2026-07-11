@@ -1,0 +1,29 @@
+[project]
+name = "gpu-burst"
+version = "0.1.0"
+description = "CLI control plane for local and burst GPU batch jobs."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "pydantic>=2.11,<3",
+  "typer>=0.16,<0.17",
+]
+
+[project.scripts]
+gpu-burst = "gpu_burst.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gpu_burst"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "workload": "song-cards",
+  "profile": "fast",
+  "runtime": {
+    "workload_repo": "makoshan/comfy-batch",
+    "workload_commit": "61db1c4840e739516647fce867e44a4ef563baff",
+    "image_digest": "sha256:example-image-digest",
+    "workflow_digest": "sha256:example-workflow-digest",
+    "model_manifest_digest": "sha256:example-model-manifest-digest"
+  },
+  "resources": {
+    "gpu": "RTX4090",
+    "gpu_count": 1,
+    "min_gpu_memory_gb": 24,
+    "min_system_memory_gb": 32,
+    "disk_gb": 80,
+    "datacenter_only": true,
+    "max_hourly_cost_usd": 0.8
+  },
+  "budget": {
+    "max_total_usd": 3.0,
+    "max_wall_seconds": 1800
+  },
+  "items": [
+    {
+      "item_id": "song-card-0001",
+      "prompt": "A flat screen-print illustration on a simple blue background.",
+      "seed": 42,
+      "required": true,
+      "output_key": "items/song-card-0001.png"
+    }
+  ]
+}
+

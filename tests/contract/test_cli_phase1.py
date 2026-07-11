@@ -77,9 +77,21 @@ def test_cli_confirm_paid_rejects_placeholder_digests(tmp_path, monkeypatch) -> 
     assert not (home / "tasks").exists()
 
 
+def test_cli_confirm_paid_run_requires_live_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("GPU_BURST_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("GPU_BURST_LIVE", raising=False)
+    task_path = write_task(tmp_path)
+
+    result = runner.invoke(app, ["run", "song-cards", "--confirm-paid", str(task_path)])
+
+    assert result.exit_code == 2
+    assert "GPU_BURST_LIVE=1" in result.stdout
+
+
 def test_cli_doctor_does_not_print_secret_values(tmp_path, monkeypatch) -> None:
     secret_path = tmp_path / "vast_api_key"
     secret_path.write_text("super-secret-value", encoding="utf-8")
+    secret_path.chmod(0o600)
     monkeypatch.setenv("GPU_BURST_VAST_API_KEY_FILE", str(secret_path))
 
     result = runner.invoke(app, ["doctor"])
@@ -101,6 +113,12 @@ def test_cli_hello_world_dry_run_writes_command_plan(tmp_path, monkeypatch) -> N
     assert payload["provider"]["name"] == "skypilot-vast"
     assert payload["launch_args"][:2] == ["sky", "launch"]
     assert "--down" in payload["launch_args"]
+    assert payload["policy"] == {
+        "autodown_idle_minutes": 10,
+        "datacenter_only": True,
+        "default_gpu": "RTX4090",
+        "max_hourly_cost_usd": 0.8,
+    }
     assert (home / "tasks" / payload["task_id"] / "manifest.json").exists()
 
 
@@ -135,3 +153,19 @@ def test_cli_watchdog_dry_run_reports_stale_tasks(tmp_path, monkeypatch) -> None
     payload = json.loads(result.stdout)
     assert payload["dry_run"] is True
     assert payload["stale_tasks"][0]["task_id"] == "task-old"
+
+
+def test_cli_watchdog_reports_corrupt_manifests_without_aborting(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    manifest_path = home / "tasks" / "task-corrupt" / "manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{not-json", encoding="utf-8")
+
+    result = runner.invoke(app, ["watchdog", "--dry-run", "--max-age-minutes", "1"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["stale_tasks"] == []
+    assert payload["scan_errors"][0]["task_id"] == "task-corrupt"
+    assert payload["scan_errors"][0]["error"] == "invalid manifest JSON"

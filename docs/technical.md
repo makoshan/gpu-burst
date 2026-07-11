@@ -179,6 +179,8 @@ max_unverified_age_minutes = 20
 - credential 文件权限应限制为当前用户；
 - `doctor` 只输出 `present / missing / invalid`，不得输出值、前后缀或可用于恢复的片段。
 
+当前实现会解析并校验 TOML，拒绝空 Vast key，并要求 key 文件不得向 group/other 开放任何权限。它只核验本地语义和权限；远端 Vast/R2 API 可用性探针仍属于 live provider 阶段。
+
 ### 5.3 云机短期凭证
 
 song-cards 实例需要三组短期权限：
@@ -438,7 +440,7 @@ cancel 先写 `CANCEL_REQUESTED` 事件，再取消 workload、请求 `sky down`
 
 ### 9.6 watchdog
 
-`watchdog --dry-run` 扫描本地 ledger 中超过 `max_unverified_age_minutes` 的非终态 task，并报告 task_id、状态、更新时间、年龄和 provider 信息。当前不触碰 Vast API；真实销毁动作留给 live watchdog 实现。
+`watchdog --dry-run` 扫描本地 ledger 中超过 `max_unverified_age_minutes` 的非终态 task，并报告 task_id、状态、更新时间、年龄和 provider 信息。损坏 JSON、缺失或不匹配的 task_id、缺失或无效的时间戳会逐项写入 `scan_errors`，不会中止其他 task 的安全扫描。当前不触碰 Vast API；真实销毁动作留给 live watchdog 实现。
 
 ## 10. SkyPilot 与 Vast
 

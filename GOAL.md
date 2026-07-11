@@ -31,6 +31,14 @@ execution unless the explicit live prerequisites are present.
 - `gpu-burst watchdog --dry-run` scans local ledger state and reports stale
   non-terminal tasks without touching providers.
 - Existing Phase 1 commands continue to work.
+- Every paid CLI path enforces the same `GPU_BURST_LIVE=1` and doctor-ready
+  gate before reaching provider code.
+- `doctor` rejects invalid TOML and empty Vast credentials without exposing
+  secret contents.
+- `watchdog --dry-run` reports corrupt ledger entries without aborting the
+  entire safety scan.
+- Hello-world manifests retain the resource and safety policy used to create
+  the plan.
 
 ## Architecture / Approach
 
@@ -65,6 +73,13 @@ execution unless the explicit live prerequisites are present.
   and `GPU_BURST_LIVE=1` paid-resource guard.
 - 2026-07-11: Updated README, product docs, and technical docs to separate
   non-paid Phase 2 preparation from true Vast/R2 live execution.
+- 2026-07-11: Started the post-review hardening slice for uniform live gates,
+  semantic doctor checks, watchdog scan isolation, and auditable policy
+  snapshots.
+- 2026-07-11: Completed the hardening slice: `run --confirm-paid` now shares
+  the live readiness gate, doctor validates configuration/key semantics and
+  permissions, watchdog isolates corrupt entries, and hello-world persists a
+  policy snapshot.
 
 ## Verification
 
@@ -87,7 +102,20 @@ execution unless the explicit live prerequisites are present.
   - `uv run python -m compileall -q src tests` exited 0.
   - `git diff --check` exited 0.
   - Markdown relative link check exited 0.
-  - High-risk credential pattern scan found no matches.
+- High-risk credential pattern scan found no matches.
+- Post-review hardening TDD red runs exposed the missing watchdog scan API,
+  unsafe key permissions, missing timestamps, non-object manifests, naive
+  timestamps, malformed providers, and invalid terminal manifests.
+- Final post-review verification:
+  - `uv lock --check` exited 0.
+  - `uv run pytest -q` passed: 34 tests passed.
+  - `uv run python -m compileall -q src tests` exited 0.
+  - `uv build --out-dir /tmp/gpu-burst-dist-hardening-final` built the sdist
+    and wheel.
+  - `git diff --check` exited 0.
+  - `hello-world --dry-run` persisted and returned its policy snapshot.
+  - `watchdog --dry-run --max-age-minutes 1` returned both `stale_tasks` and
+    `scan_errors` without provider side effects.
   - Old contradictory status wording scan found no matches.
 - New remaining-work verification pending.
 - New TDD red run failed as expected: missing `Settings`, `providers`, and
@@ -128,6 +156,6 @@ execution unless the explicit live prerequisites are present.
 
 ## Final Review
 
-- Remaining non-paid control-plane work is implemented and verified.
+- Post-review hardening success criteria are implemented and verified.
 - The first true paid Vast hello-world run is still blocked by missing
   paid-runtime tools/credentials and requires explicit live execution.

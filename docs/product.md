@@ -21,7 +21,7 @@ gpu-burst logs <task_id>
 gpu-burst cancel <task_id>
 ```
 
-当前已实现的范围是本地 Phase 1 加 Phase 2 非付费准备：`doctor`、`quote` 的 fake-cloud 估算、`run --dry-run`、`status`、`logs`、本地 `cancel` 事件记录、`hello-world --dry-run` 命令计划和 `watchdog --dry-run` stale task 扫描。真实 Vast/R2/ComfyUI 付费运行仍是 `planned`，并被 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` readiness 共同保护。
+当前已实现的范围是本地 Phase 1 加 Phase 2 非付费准备：`doctor`、`quote` 的 fake-cloud 估算、`run --dry-run`、`status`、`logs`、本地 `cancel` 事件记录、`hello-world --dry-run` 命令计划和 `watchdog --dry-run` stale task 扫描。真实 Vast/R2/ComfyUI 付费运行仍是 `planned`，所有付费入口均被 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` readiness 共同保护；hello-world 计划会保存资源/安全策略快照以便审计。
 
 ## 2. 要解决的问题
 

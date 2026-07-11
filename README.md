@@ -36,7 +36,7 @@ CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 c
 gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world --dry-run` / `watchdog --dry-run`。真实 Vast/R2/ComfyUI 付费执行仍未实现；付费路径必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
+已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world --dry-run` / `watchdog --dry-run`。真实 Vast/R2/ComfyUI 付费执行仍未实现；所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。`doctor` 会拒绝无效 TOML、空密钥及组/其他用户可读的 Vast key；watchdog 会在 `scan_errors` 中隔离报告损坏的 ledger manifest。
 
 本地验证：
 

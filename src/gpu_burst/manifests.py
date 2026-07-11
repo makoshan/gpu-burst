@@ -6,7 +6,7 @@ import re
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$")
@@ -133,4 +133,3 @@ def validate_for_run(task: TaskSpec, *, dry_run: bool) -> None:
 
 def load_task_json(path) -> TaskSpec:
     return TaskSpec.model_validate_json(path.read_text(encoding="utf-8"))
-

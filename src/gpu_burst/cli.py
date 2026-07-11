@@ -17,7 +17,7 @@ from gpu_burst.lifecycle import ItemState, TaskState
 from gpu_burst.manifests import TaskSpec, item_key, load_task_json, validate_for_run
 from gpu_burst.providers.skypilot import SkyLaunchPlan
 from gpu_burst.quote import build_quote
-from gpu_burst.safety.watchdog import find_stale_tasks
+from gpu_burst.safety.watchdog import scan_stale_tasks
 
 
 app = typer.Typer(no_args_is_help=True)
@@ -85,6 +85,7 @@ def run(
         raise typer.Exit(2) from exc
 
     if confirm_paid and not dry_run:
+        _require_live_ready()
         typer.echo("Paid provider execution is not implemented in Phase 1.")
         raise typer.Exit(2)
 
@@ -187,6 +188,12 @@ def hello_world(
             "cluster_name": cluster_name,
             "instance_id": None,
         },
+        "policy": {
+            "datacenter_only": settings.provider.vast.datacenter_only,
+            "max_hourly_cost_usd": settings.provider.vast.max_hourly_cost_usd,
+            "default_gpu": settings.provider.vast.default_gpu,
+            "autodown_idle_minutes": settings.safety.autodown_idle_minutes,
+        },
         "launch_args": plan.launch_args(),
         "down_args": plan.down_args(),
     }
@@ -210,12 +217,13 @@ def watchdog(
     settings = load_settings()
     max_age = max_age_minutes or settings.safety.max_unverified_age_minutes
     ledger = Ledger(data_home())
-    stale = find_stale_tasks(ledger, max_age_minutes=max_age)
+    scan = scan_stale_tasks(ledger, max_age_minutes=max_age)
     _emit_json(
         {
             "dry_run": True,
             "max_age_minutes": max_age,
-            "stale_tasks": [task.as_dict() for task in stale],
+            "stale_tasks": [task.as_dict() for task in scan.stale_tasks],
+            "scan_errors": [error.as_dict() for error in scan.scan_errors],
         }
     )
 

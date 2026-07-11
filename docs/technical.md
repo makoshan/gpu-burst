@@ -179,6 +179,8 @@ max_unverified_age_minutes = 20
 - credential 文件权限应限制为当前用户；
 - `doctor` 只输出 `present / missing / invalid`，不得输出值、前后缀或可用于恢复的片段。
 
+当前实现会解析并校验 TOML，拒绝空 Vast key，并要求 key 文件不得向 group/other 开放任何权限。它只核验本地语义和权限；远端 Vast/R2 API 可用性探针仍属于 live provider 阶段。
+
 ### 5.3 云机短期凭证
 
 song-cards 实例需要三组短期权限：
@@ -424,6 +426,22 @@ R2 不依赖 S3 bucket versioning。每次 manifest 使用递增序号和内容�
 
 cancel 先写 `CANCEL_REQUESTED` 事件，再取消 workload、请求 `sky down`，最后通过 Vast API 核验。无法核验销毁时返回非零并保留 watchdog 接管标记。
 
+### 9.5 hello-world
+
+`hello-world --dry-run` 生成 Phase 2 的 SkyPilot 命令计划并写本地 ledger，不创建云资源。输出包含 `launch_args` 与 `down_args`，二者均为参数数组，禁止通过 shell 拼接执行用户输入。
+
+`hello-world --confirm-paid` 必须先满足：
+
+- `GPU_BURST_LIVE=1`；
+- `doctor` 返回 `paid_runtime_ready=true`；
+- SkyPilot/Vast 本地依赖和凭证检查通过。
+
+当前实现通过参数数组执行 `sky launch`，同时设置 `--idle-minutes-to-autostop <minutes> --down`，并在 finally 路径显式执行 `sky down -y <cluster>`。launch/down 输出不会进入 CLI 错误或 ledger。任务在 teardown 开始前写入 `TEARING_DOWN`，最终写入 `SUCCEEDED` 或 `FAILED`。Vast API 独立销毁复核与账单记录尚未实现，因此仍是 experimental。
+
+### 9.6 watchdog
+
+`watchdog --dry-run` 扫描本地 ledger 中超过 `max_unverified_age_minutes` 的非终态 task，并报告 task_id、状态、更新时间、年龄和 provider 信息。损坏 JSON、缺失或不匹配的 task_id、缺失或无效的时间戳会逐项写入 `scan_errors`，不会中止其他 task 的安全扫描。当前不触碰 Vast API；真实销毁动作留给 live watchdog 实现。
+
 ## 10. SkyPilot 与 Vast
 
 ### 10.1 资源约束
@@ -620,6 +638,8 @@ GPU_BURST_LIVE=1 gpu-burst run --confirm-paid tasks/song-cards.example.json
 - quote 与硬预算；
 - remote autodown、finally down、watchdog；
 - `nvidia-smi` 及三种故障演练。
+
+当前状态：受保护的 live 生命周期已实现，包括正确的 SkyPilot idle-autostop/down 参数、显式 finally down、清理前状态落盘和净化错误。手工 Vast `nvidia-smi`/ComfyUI 烟测已经成功且实例已销毁；仍需用 CLI 完成真实故障演练、Vast API 销毁复核和账单关联。
 
 完成条件：正常、CLI 中断和远端命令失败均能在销毁 SLA 内确认实例消失。
 

@@ -21,7 +21,7 @@ gpu-burst logs <task_id>
 gpu-burst cancel <task_id>
 ```
 
-当前已实现的范围是本地 Phase 1：`doctor`、`quote` 的 fake-cloud 估算、`run --dry-run`、`status`、`logs` 和本地 `cancel` 事件记录。真实 Vast/R2/ComfyUI 付费运行仍是 `planned`。
+当前已实现的范围是本地 Phase 1 加 Phase 2 非付费准备：`doctor`、`quote` 的 fake-cloud 估算、`run --dry-run`、`status`、`logs`、本地 `cancel` 事件记录、`hello-world --dry-run` 命令计划和 `watchdog --dry-run` stale task 扫描。真实 Vast/R2/ComfyUI 付费运行仍是 `planned`，并被 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` readiness 共同保护。
 
 ## 2. 要解决的问题
 
@@ -95,6 +95,7 @@ gpu-burst 的价值不是“让模型跑起来”，而是让现有任务以可�
 | 能力 | 当前状态 | 晋级条件 |
 |---|---|---|
 | gpu-burst 本地 CLI 骨架 | `experimental` | 默认测试通过，可生成本地 dry-run ledger；尚未触达云端 |
+| Vast hello-world 非付费准备 | `experimental` | 已生成 SkyPilot 命令计划和本地 watchdog 扫描；尚未创建真实 Vast 实例 |
 | comfy-batch 本地生图 | `reference` | 已有 50 张 song-cards 上线记录；gpu-burst 不把它冒充为云端验证 |
 | song-cards 云端 1 张闭环 | `planned` | 产物、manifest、账单、自动销毁全部通过 |
 | song-cards 20 张批量 | `planned` | 单张闭环与故障演练通过后，逐项恢复无重复生成 |
@@ -224,12 +225,13 @@ doctor
 
 1. ✅ 文档与 schema；
 2. ✅ 本地 `doctor`、fake-cloud `quote`、`run --dry-run`、ledger、status/logs；
-3. Vast hello-world；
-4. song-cards 单张；
-5. 20 张批量与故障恢复；
-6. 基于真实账单修正 quote；
-7. 评估第二条管线，优先选择能验证新抽象而不是重复第一条路径的 workload；
-8. CLI 稳定后再增加 Agent Skill。
+3. ✅ Vast hello-world 非付费准备：dry-run plan、live gate、local watchdog；
+4. Vast hello-world live；
+5. song-cards 单张；
+6. 20 张批量与故障恢复；
+7. 基于真实账单修正 quote；
+8. 评估第二条管线，优先选择能验证新抽象而不是重复第一条路径的 workload；
+9. CLI 稳定后再增加 Agent Skill。
 
 ## 11. 开放决策
 

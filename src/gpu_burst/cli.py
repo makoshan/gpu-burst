@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,11 +10,14 @@ from typing import Annotated
 import typer
 
 from gpu_burst.config import data_home
+from gpu_burst.config import load_settings
 from gpu_burst.doctor import build_report, exit_code
 from gpu_burst.ledger import Ledger, utc_now
 from gpu_burst.lifecycle import ItemState, TaskState
 from gpu_burst.manifests import TaskSpec, item_key, load_task_json, validate_for_run
+from gpu_burst.providers.skypilot import SkyLaunchPlan
 from gpu_burst.quote import build_quote
+from gpu_burst.safety.watchdog import find_stale_tasks
 
 
 app = typer.Typer(no_args_is_help=True)
@@ -35,6 +39,16 @@ def _load_and_check(workload: str, task_path: Path) -> TaskSpec:
 def _new_task_id(workload: str) -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"{workload}-{stamp}-{secrets.token_hex(3)}"
+
+
+def _require_live_ready() -> None:
+    if os.environ.get("GPU_BURST_LIVE") != "1":
+        typer.echo("Paid execution requires GPU_BURST_LIVE=1.")
+        raise typer.Exit(2)
+    report = build_report()
+    if not report.paid_runtime_ready:
+        typer.echo("Paid execution requires doctor to report paid_runtime_ready=true.")
+        raise typer.Exit(exit_code(report))
 
 
 @app.command()
@@ -138,6 +152,72 @@ def cancel(task_id: str) -> None:
     ledger = Ledger(data_home())
     ledger.append_event(task_id, "CANCEL_REQUESTED", {"phase": "local"})
     typer.echo("Cancel is recorded locally. Provider cancellation is not implemented in Phase 1.")
+
+
+@app.command("hello-world")
+def hello_world(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Write a local hello-world plan without launching cloud resources."),
+    confirm_paid: bool = typer.Option(False, "--confirm-paid", help="Required before a paid hello-world launch."),
+) -> None:
+    if not dry_run and not confirm_paid:
+        typer.echo("Use --confirm-paid for paid cloud execution, or --dry-run for local planning.")
+        raise typer.Exit(2)
+    if confirm_paid:
+        _require_live_ready()
+        typer.echo("Paid hello-world launch is still blocked until provider execution is implemented.")
+        raise typer.Exit(2)
+
+    settings = load_settings()
+    task_id = _new_task_id("hello-world")
+    cluster_name = f"gb-hello-world-{task_id.rsplit('-', 1)[-1]}"
+    plan = SkyLaunchPlan(
+        cluster_name=cluster_name,
+        task_file=Path("sky/hello-world.yaml"),
+        autodown_idle_minutes=settings.safety.autodown_idle_minutes,
+    )
+    manifest = {
+        "task_id": task_id,
+        "task_state": TaskState.QUOTED,
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
+        "dry_run": True,
+        "dry_run_state": "SUCCEEDED",
+        "provider": {
+            "name": "skypilot-vast",
+            "cluster_name": cluster_name,
+            "instance_id": None,
+        },
+        "launch_args": plan.launch_args(),
+        "down_args": plan.down_args(),
+    }
+    ledger = Ledger(data_home())
+    ledger.create_task(task_id, {"task_id": task_id, "workload": "hello-world"})
+    ledger.append_event(task_id, "CREATED", {"phase": "hello-world"})
+    ledger.append_event(task_id, "PLANNED", {"cluster_name": cluster_name})
+    ledger.write_manifest(task_id, manifest)
+    ledger.append_event(task_id, "DRY_RUN_COMPLETE", {"dry_run_state": "SUCCEEDED"})
+    _emit_json(manifest)
+
+
+@app.command()
+def watchdog(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report stale local tasks without touching providers."),
+    max_age_minutes: int | None = typer.Option(None, "--max-age-minutes", min=1),
+) -> None:
+    if not dry_run:
+        typer.echo("Provider watchdog actions are not implemented yet. Use --dry-run for local stale-task reporting.")
+        raise typer.Exit(2)
+    settings = load_settings()
+    max_age = max_age_minutes or settings.safety.max_unverified_age_minutes
+    ledger = Ledger(data_home())
+    stale = find_stale_tasks(ledger, max_age_minutes=max_age)
+    _emit_json(
+        {
+            "dry_run": True,
+            "max_age_minutes": max_age,
+            "stale_tasks": [task.as_dict() for task in stale],
+        }
+    )
 
 
 if __name__ == "__main__":

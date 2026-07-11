@@ -1,0 +1,11 @@
+resources:
+  cloud: vast
+  accelerators: RTX4090:1
+  disk_size: 30
+  use_spot: false
+
+workdir: .
+
+run: |
+  set -euo pipefail
+  nvidia-smi

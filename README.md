@@ -36,7 +36,7 @@ CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 c
 gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-Phase 1 已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）。真实 Vast/R2/ComfyUI 付费执行仍未实现，`run --confirm-paid` 不会创建实例。
+已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world --dry-run` / `watchdog --dry-run`。真实 Vast/R2/ComfyUI 付费执行仍未实现；付费路径必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
 
 本地验证：
 
@@ -44,6 +44,8 @@ Phase 1 已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算
 uv run gpu-burst doctor
 uv run gpu-burst quote song-cards tasks/song-cards.example.json
 uv run gpu-burst run song-cards --dry-run tasks/song-cards.example.json
+uv run gpu-burst hello-world --dry-run
+uv run gpu-burst watchdog --dry-run
 ```
 
 云端目标行为：**比价租机 → 从 R2 拉权重/输入 → 跑任务 → 回传结果 → 销毁机器 → 记账**
@@ -119,18 +121,19 @@ gpu-burst/
 
 1. ✅ 调研选型（2026-07-10）
 2. ✅ Phase 1 本地骨架：uv / Python 3.13 项目、schema、ledger、状态机、redaction、`doctor`、`quote`、`run --dry-run`、fake provider 和测试
-3. ⬜ `gpu-burst doctor` 付费运行检查补齐：skypilot\[vast\]==0.12.3.post1 + vastai + s5cmd + 凭证可用性 + R2 探针
-4. ⬜ hello-world：`sky launch` 跑 `nvidia-smi`，单独验证创建→执行→远端 autodown→Vast 账单（与 ComfyUI 问题解耦）
-5. ⬜ 最小闭环（7 天时间盒，只做 song-cards 一条管线），验收标准：
+3. ✅ Phase 2 非付费准备：TOML 配置读取、`hello-world --dry-run` SkyPilot 命令计划、`GPU_BURST_LIVE=1` 付费门、`watchdog --dry-run` 本地 stale task 扫描
+4. ⬜ `gpu-burst doctor` 付费运行检查补齐：skypilot\[vast\]==0.12.3.post1 + vastai + s5cmd + 凭证可用性 + R2 探针
+5. ⬜ hello-world live：`sky launch` 跑 `nvidia-smi`，单独验证创建→执行→远端 autodown→Vast 账单（与 ComfyUI 问题解耦）
+6. ⬜ 最小闭环（7 天时间盒，只做 song-cards 一条管线），验收标准：
    - 1 张图：R2 拉模型/输入 → 回传结果 → 自动销毁 → 成本入账
    - 故障演练：本地 CLI 中断 / 任务失败 / 凭证过期，实例仍被销毁
    - 幂等重跑：已完成图片不重复生成；task manifest 最小字段：task_id、输入 URI + SHA-256、镜像 digest、阶段状态、预算/实际费用
    - 全部通过后才扩到 20 张批量
-6. ⬜ 采访音频管线（数据积累不等人；数据目录先设计，不与 MVP 绑定）
-7. ⬜ OCR：先本地跑 10 页基准（流式拼音 / 纯表格 / 复杂表格），记录每页耗时、异常规则召回、声调/字符错误与人工复核量；验证 hybrid_ocr 后再按冷启动盈亏决定是否上云
-8. ⬜ 配音迁移：podcast-dub 本地 16GB 够用（其 README 自述），仅当排队 / 采访季吞吐压力出现才迁，价值是并发和释放本机
-9. ⬜ 封装成 Claude Skill（CLI 稳定后再包壳）
-10. ⬜ 训练管线（等潮汕 v1 音节录音 / 语料到位后启动；Vast 无多机，按单机微调设计，需多机另评 RunPod Clusters / Lambda 等）
+7. ⬜ 采访音频管线（数据积累不等人；数据目录先设计，不与 MVP 绑定）
+8. ⬜ OCR：先本地跑 10 页基准（流式拼音 / 纯表格 / 复杂表格），记录每页耗时、异常规则召回、声调/字符错误与人工复核量；验证 hybrid_ocr 后再按冷启动盈亏决定是否上云
+9. ⬜ 配音迁移：podcast-dub 本地 16GB 够用（其 README 自述），仅当排队 / 采访季吞吐压力出现才迁，价值是并发和释放本机
+10. ⬜ 封装成 Claude Skill（CLI 稳定后再包壳）
+11. ⬜ 训练管线（等潮汕 v1 音节录音 / 语料到位后启动；Vast 无多机，按单机微调设计，需多机另评 RunPod Clusters / Lambda 等）
 
 ## 安全与保险丝
 

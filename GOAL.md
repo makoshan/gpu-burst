@@ -2,39 +2,41 @@
 
 ## Goal
 
-Implement the Phase 1 local development loop for gpu-burst.
+Implement the remaining non-paid control-plane work needed before the first
+Vast hello-world run.
 
-The user-visible outcome is a runnable Python CLI that can validate a
-song-cards task, estimate local/fake-cloud cost, write a reviewable local
-ledger, report status/logs, and run local dry-run flows without creating paid
-cloud resources.
+The user-visible outcome is a CLI that can still run Phase 1 dry-runs, plus a
+guarded Phase 2 hello-world path that can plan SkyPilot execution, enforce live
+resource gates, inspect local task ledgers for stale work, and refuse paid
+execution unless the explicit live prerequisites are present.
 
 ## Non-goals
 
-- No paid Vast.ai instance creation in this phase.
-- No real R2 object writes in this phase.
-- No ComfyUI or comfy-batch cloud image execution in this phase.
+- No paid Vast.ai instance creation without an explicit follow-up run with
+  `GPU_BURST_LIVE=1`, `--confirm-paid`, working paid-runtime tools, and
+  credentials.
+- No real R2 object writes without live credentials.
+- No ComfyUI or comfy-batch cloud image execution in this slice.
 - No public publishing flow.
 
 ## Success Criteria
 
 - `uv run pytest` passes without cloud credentials.
-- `gpu-burst doctor` distinguishes missing tools/config from a fully ready paid
-  runtime and never prints credential values.
-- `gpu-burst quote song-cards tasks/song-cards.example.json` returns a bounded
-  estimate without provisioning.
-- `gpu-burst run song-cards --dry-run tasks/song-cards.example.json` validates
-  the task, writes a local ledger, generates manifest/events, and exits without
-  cloud side effects.
-- `gpu-burst status <task_id>` and `gpu-burst logs <task_id>` read the local
-  ledger.
-- Placeholder runtime digests are rejected for non-dry-run paid execution.
+- `gpu-burst hello-world --dry-run` writes a local ledger and returns the exact
+  SkyPilot command plan without provisioning.
+- `gpu-burst hello-world --confirm-paid` refuses to run unless
+  `GPU_BURST_LIVE=1` and `doctor` reports paid-runtime readiness.
+- SkyPilot command construction is argument-array based and includes remote
+  autodown.
+- `gpu-burst watchdog --dry-run` scans local ledger state and reports stale
+  non-terminal tasks without touching providers.
+- Existing Phase 1 commands continue to work.
 
 ## Architecture / Approach
 
 - Use `uv`, Python 3.13, Typer, Pydantic v2, and pytest.
-- Keep paid-provider behavior behind explicit adapters and leave Phase 2 live
-  provider commands gated.
+- Keep paid-provider behavior behind explicit adapters and require explicit
+  live gates before any external execution.
 - Store local task ledgers under the XDG data directory, with `GPU_BURST_HOME`
   overriding the location in tests and development.
 - Use append-only JSONL events and atomic JSON snapshot writes.
@@ -54,6 +56,15 @@ cloud resources.
 - 2026-07-11: Corrected dry-run semantics: dry-run manifests now keep the real
   task at `QUOTED` and expose `dry_run_state: SUCCEEDED`, instead of pretending
   image generation succeeded.
+- 2026-07-11: Started remaining-work slice on branch
+  `codex/complete-remaining-guarded-live`.
+- 2026-07-11: Added TDD coverage for TOML settings, SkyPilot command planning,
+  hello-world dry-run, live guard, and local watchdog stale-task detection.
+- 2026-07-11: Implemented `hello-world --dry-run`, `watchdog --dry-run`,
+  `sky/hello-world.yaml`, SkyPilot launch/down argument planning, TOML settings,
+  and `GPU_BURST_LIVE=1` paid-resource guard.
+- 2026-07-11: Updated README, product docs, and technical docs to separate
+  non-paid Phase 2 preparation from true Vast/R2 live execution.
 
 ## Verification
 
@@ -78,6 +89,30 @@ cloud resources.
   - Markdown relative link check exited 0.
   - High-risk credential pattern scan found no matches.
   - Old contradictory status wording scan found no matches.
+- New remaining-work verification pending.
+- New TDD red run failed as expected: missing `Settings`, `providers`, and
+  `safety` modules.
+- `uv run pytest tests/unit/test_config.py tests/unit/test_skypilot_provider.py
+  tests/unit/test_watchdog.py tests/contract/test_cli_phase1.py` passed: 13
+  tests passed.
+- `uv run pytest` passed: 22 tests passed.
+- `env GPU_BURST_HOME=/tmp/gpu-burst-remaining-smoke uv run gpu-burst
+  hello-world --dry-run` passed and returned a SkyPilot launch plan with
+  `--down 10`.
+- `env GPU_BURST_HOME=/tmp/gpu-burst-remaining-smoke uv run gpu-burst watchdog
+  --dry-run --max-age-minutes 1` passed and returned an empty stale task list.
+- Final verification before commit:
+  - `uv run pytest` passed: 22 tests passed.
+  - `uv run python -m compileall -q src tests` exited 0.
+  - `uv build --out-dir /tmp/gpu-burst-dist-remaining` built sdist and wheel.
+  - `git diff --check` exited 0.
+  - `uv lock --check` exited 0.
+  - `hello-world --dry-run` smoke passed with `sky launch ... --down 10`.
+  - `watchdog --dry-run --max-age-minutes 1` smoke passed.
+  - `hello-world --confirm-paid` without `GPU_BURST_LIVE=1` exited 2 with the
+    expected guard message.
+  - Markdown relative link check exited 0.
+  - High-risk credential pattern scan found no matches.
 
 ## Decisions and Issues
 
@@ -86,11 +121,13 @@ cloud resources.
   `uv` has Python 3.13.5 available locally.
 - Phase 1 intentionally does not install or call SkyPilot/Vast/R2 live provider
   paths. `doctor` surfaces missing paid-runtime dependencies as exit code 2.
+- Completing the true Vast hello-world live run is blocked until paid-runtime
+  tools and credentials exist and Mako explicitly authorizes a paid run.
+- The live guard is intentionally stricter than `--confirm-paid` alone:
+  `GPU_BURST_LIVE=1` and a ready `doctor` are both required.
 
 ## Final Review
 
-- Phase 1 local development loop is implemented and verified.
-- The CLI can validate and quote the example task, write a local dry-run
-  ledger, and read status/logs without cloud side effects.
-- Paid provider execution remains intentionally blocked until Phase 2 adds
-  SkyPilot/Vast/R2 live integrations and paid-resource verification.
+- Remaining non-paid control-plane work is implemented and verified.
+- The first true paid Vast hello-world run is still blocked by missing
+  paid-runtime tools/credentials and requires explicit live execution.

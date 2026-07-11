@@ -3,6 +3,7 @@ import json
 from typer.testing import CliRunner
 
 from gpu_burst.cli import app
+from gpu_burst.ledger import Ledger
 from tests.unit.test_manifests import valid_task_dict
 
 
@@ -86,3 +87,51 @@ def test_cli_doctor_does_not_print_secret_values(tmp_path, monkeypatch) -> None:
     assert result.exit_code in {0, 2}
     assert "super-secret-value" not in result.stdout
     assert "vast_api_key" in result.stdout
+
+
+def test_cli_hello_world_dry_run_writes_command_plan(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+
+    result = runner.invoke(app, ["hello-world", "--dry-run"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["task_state"] == "QUOTED"
+    assert payload["provider"]["name"] == "skypilot-vast"
+    assert payload["launch_args"][:2] == ["sky", "launch"]
+    assert "--down" in payload["launch_args"]
+    assert (home / "tasks" / payload["task_id"] / "manifest.json").exists()
+
+
+def test_cli_hello_world_confirm_paid_requires_live_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("GPU_BURST_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("GPU_BURST_LIVE", raising=False)
+
+    result = runner.invoke(app, ["hello-world", "--confirm-paid"])
+
+    assert result.exit_code == 2
+    assert "GPU_BURST_LIVE=1" in result.stdout
+
+
+def test_cli_watchdog_dry_run_reports_stale_tasks(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    ledger = Ledger(home)
+    ledger.create_task("task-old", {"task_id": "task-old", "workload": "hello-world"})
+    ledger.write_manifest(
+        "task-old",
+        {
+            "task_id": "task-old",
+            "task_state": "PROVISIONING",
+            "updated_at": "2026-07-10T00:00:00Z",
+            "provider": {"name": "vast", "cluster_name": "gb-task-old"},
+        },
+    )
+
+    result = runner.invoke(app, ["watchdog", "--dry-run", "--max-age-minutes", "1"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["stale_tasks"][0]["task_id"] == "task-old"

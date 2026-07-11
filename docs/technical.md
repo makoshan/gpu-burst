@@ -424,6 +424,22 @@ R2 不依赖 S3 bucket versioning。每次 manifest 使用递增序号和内容�
 
 cancel 先写 `CANCEL_REQUESTED` 事件，再取消 workload、请求 `sky down`，最后通过 Vast API 核验。无法核验销毁时返回非零并保留 watchdog 接管标记。
 
+### 9.5 hello-world
+
+`hello-world --dry-run` 生成 Phase 2 的 SkyPilot 命令计划并写本地 ledger，不创建云资源。输出包含 `launch_args` 与 `down_args`，二者均为参数数组，禁止通过 shell 拼接执行用户输入。
+
+`hello-world --confirm-paid` 必须先满足：
+
+- `GPU_BURST_LIVE=1`；
+- `doctor` 返回 `paid_runtime_ready=true`；
+- 后续 live provider 实现存在。
+
+当前实现会在通过前两道门后仍拒绝付费 launch，直到 SkyPilot/Vast 真实执行、销毁核验与账单记录完成。
+
+### 9.6 watchdog
+
+`watchdog --dry-run` 扫描本地 ledger 中超过 `max_unverified_age_minutes` 的非终态 task，并报告 task_id、状态、更新时间、年龄和 provider 信息。当前不触碰 Vast API；真实销毁动作留给 live watchdog 实现。
+
 ## 10. SkyPilot 与 Vast
 
 ### 10.1 资源约束
@@ -620,6 +636,8 @@ GPU_BURST_LIVE=1 gpu-burst run --confirm-paid tasks/song-cards.example.json
 - quote 与硬预算；
 - remote autodown、finally down、watchdog；
 - `nvidia-smi` 及三种故障演练。
+
+当前状态：非付费准备已实现，包括 TOML 配置、`sky/hello-world.yaml`、SkyPilot launch/down 参数数组、`hello-world --dry-run`、`GPU_BURST_LIVE=1` live gate 和 `watchdog --dry-run` 本地 stale task 扫描。真实 Vast 实例创建、`nvidia-smi`、Vast 销毁核验和账单关联尚未执行。
 
 完成条件：正常、CLI 中断和远端命令失败均能在销毁 SLA 内确认实例消失。
 

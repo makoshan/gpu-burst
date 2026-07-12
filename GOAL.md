@@ -65,6 +65,21 @@ execution unless the explicit live prerequisites are present.
   Local ledger task `hello-world-20260712-000427-d76a20` reached
   `PROVISIONING`, recorded `TEARING_DOWN`, and ended `FAILED` with sanitized
   error `sky launch failed`.
+- 2026-07-12: Patched the local SkyPilot blocker outside the repo:
+  `sky/provision/vast/utils.py:204` now uses `vast.vast().api_key` instead of
+  the missing `.client.api_key` (vastai-sdk 0.2.5). Backup kept at
+  `utils.py.bak-clientfix`.
+- 2026-07-12: Second guarded paid run (Mako-approved) got past the SDK bug and
+  failed at offer matching with zero charge (no instance created). Root cause is
+  SkyPilot's coarse Vast catalog: every `~/.sky/catalogs/v8/vast/vms.csv` row is
+  templated as `Nx-GPU-32-65536`, hardcoding `cpu_ram>=64GB` and pinning the
+  georegion. `RTX3060:1` resolves to the only single-card row
+  `1x-RTX_3060_Ti` (Ontario CA / NA), so provisioning demands
+  `gpu_name="RTX 3060 Ti" cpu_ram>=64 geolocation="NA"`; of 27 live RTX3060
+  offers only one has >=64GB RAM and it is in CN, so NA matches nothing.
+  Blocker is not repo code. Choosing a GPU/region with real >=64GB NA offers
+  conflicts with the `max_hourly_cost_usd = 0.10` policy, so the next step is a
+  GPU/cost policy decision, not a code fix.
 - 2026-07-12: Diagnosed the provisioning failure and fixed a repo-side planning
   defect found during the run: hello-world now writes a per-task SkyPilot YAML
   using `provider.vast.default_gpu` instead of always launching the static

@@ -51,6 +51,28 @@ def _require_live_ready() -> None:
         raise typer.Exit(exit_code(report))
 
 
+def _write_hello_world_sky_task(path: Path, gpu: str) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "resources:",
+                "  cloud: vast",
+                f"  accelerators: {gpu}:1",
+                "  disk_size: 30",
+                "  use_spot: false",
+                "",
+                "workdir: .",
+                "",
+                "run: |",
+                "  set -euo pipefail",
+                "  nvidia-smi",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 @app.command()
 def doctor() -> None:
     report = build_report()
@@ -169,9 +191,13 @@ def hello_world(
     settings = load_settings()
     task_id = _new_task_id("hello-world")
     cluster_name = f"gb-hello-world-{task_id.rsplit('-', 1)[-1]}"
+    ledger = Ledger(data_home())
+    ledger.create_task(task_id, {"task_id": task_id, "workload": "hello-world"})
+    task_file = ledger.task_dir(task_id) / "sky-task.yaml"
+    _write_hello_world_sky_task(task_file, settings.provider.vast.default_gpu)
     plan = SkyLaunchPlan(
         cluster_name=cluster_name,
-        task_file=Path("sky/hello-world.yaml"),
+        task_file=task_file,
         autodown_idle_minutes=settings.safety.autodown_idle_minutes,
     )
     manifest = {
@@ -194,8 +220,6 @@ def hello_world(
         "launch_args": plan.launch_args(),
         "down_args": plan.down_args(),
     }
-    ledger = Ledger(data_home())
-    ledger.create_task(task_id, {"task_id": task_id, "workload": "hello-world"})
     ledger.append_event(task_id, "CREATED", {"phase": "hello-world"})
     ledger.append_event(task_id, "PLANNED", {"cluster_name": cluster_name})
     if dry_run:

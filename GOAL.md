@@ -58,6 +58,17 @@ execution unless the explicit live prerequisites are present.
 
 ## Progress Log
 
+- 2026-07-12: Started the first guarded paid CLI hello-world run requested by
+  Mako to validate the full `gpu-burst -> SkyPilot -> Vast -> nvidia-smi ->
+  sky down -> ledger` lifecycle.
+- 2026-07-12: The paid CLI run failed safely during SkyPilot provisioning.
+  Local ledger task `hello-world-20260712-000427-d76a20` reached
+  `PROVISIONING`, recorded `TEARING_DOWN`, and ended `FAILED` with sanitized
+  error `sky launch failed`.
+- 2026-07-12: Diagnosed the provisioning failure and fixed a repo-side planning
+  defect found during the run: hello-world now writes a per-task SkyPilot YAML
+  using `provider.vast.default_gpu` instead of always launching the static
+  `sky/hello-world.yaml` with `RTX4090`.
 - 2026-07-11: Created implementation branch `codex/implement-phase1-local-cli`.
 - 2026-07-11: Established Phase 1 scope and success criteria.
 - 2026-07-11: Added pytest contract/unit coverage before implementation. Initial
@@ -95,6 +106,36 @@ execution unless the explicit live prerequisites are present.
 
 ## Verification
 
+- 2026-07-12 paid run preflight:
+  - `vastai show instances-v1 --raw` returned `instances_found: 0`.
+  - `uv run gpu-burst doctor` returned `paid_runtime_ready: true`.
+- 2026-07-12 paid run result:
+  - `GPU_BURST_LIVE=1 uv run gpu-burst hello-world --confirm-paid` exited 1
+    with sanitized output `sky launch failed`.
+  - Ledger manifest
+    `~/.local/share/gpu-burst/tasks/hello-world-20260712-000427-d76a20/manifest.json`
+    recorded `task_state: FAILED`, `dry_run: false`, cluster
+    `gb-hello-world-d76a20`, and a `TEARING_DOWN` event before failure.
+  - SkyPilot provision logs showed `AttributeError: VastAI has no attribute
+    client` inside SkyPilot's Vast provider before any active cluster remained.
+  - `sky down -y gb-hello-world-d76a20` reported the cluster was not found.
+  - `vastai show instances-v1 --raw` returned `instances_found: 0`.
+  - `sky status` reported no clusters, no in-progress managed jobs, and no live
+    services.
+- 2026-07-12 follow-up verification after the per-task SkyPilot YAML fix:
+  - New TDD red run failed because `launch_args` still pointed at
+    `sky/hello-world.yaml`.
+  - Targeted green run passed:
+    `uv run pytest tests/contract/test_cli_phase1.py::test_cli_hello_world_plan_uses_configured_gpu_in_generated_sky_task -q`.
+  - Related contract/unit run passed:
+    `uv run pytest tests/unit/test_skypilot_provider.py tests/contract/test_cli_phase1.py -q`
+    reported 20 passed.
+  - Full verification passed: `uv run pytest -q` reported 45 passed.
+  - `uv run python -m compileall -q src tests` exited 0.
+  - `git diff --check` exited 0.
+  - `GPU_BURST_HOME=/tmp/gpu-burst-dynamic-sky-task-smoke uv run gpu-burst
+    hello-world --dry-run` generated a task-local `sky-task.yaml` containing
+    `accelerators: RTX3060:1` and policy `max_hourly_cost_usd: 0.1`.
 - `uv run pytest` initially failed with `ModuleNotFoundError: No module named
   'gpu_burst'`, as expected before implementation.
 - `uv run pytest` passed: 14 tests passed.
@@ -179,12 +220,19 @@ execution unless the explicit live prerequisites are present.
   requires Mako's explicit invocation.
 - The live guard is intentionally stricter than `--confirm-paid` alone:
   `GPU_BURST_LIVE=1` and a ready `doctor` are both required.
+- First paid CLI run did not complete `nvidia-smi`; current blocker is the
+  local SkyPilot Vast provider environment. SkyPilot 0.12.3.post1 calls
+  `vast.vast().client.api_key`, but its installed `vastai-sdk 0.2.5` object no
+  longer exposes `.client`.
+- The run also exposed that the previous static `sky/hello-world.yaml` ignored
+  the configured GPU and selected RTX4090 resources. That repo-side defect is
+  fixed by generating a per-task SkyPilot YAML from settings.
 
 ## Final Review
 
 - Post-review hardening success criteria are implemented and verified.
 - Guarded live hello-world code is implemented and locally verified without
   creating paid resources.
-- Remaining gates are deliberately separate: run the new CLI path once against
-  Vast, add independent Vast API destruction verification, and correlate the
-  resulting charge. Song-cards automation remains Phase 3.
+- Remaining gates are deliberately separate: repair or pin the local
+  SkyPilot/Vast SDK compatibility, run the guarded CLI path again against Vast,
+  and correlate any resulting charge. Song-cards automation remains Phase 3.

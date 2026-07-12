@@ -124,6 +124,36 @@ def test_cli_hello_world_dry_run_writes_command_plan(tmp_path, monkeypatch) -> N
     assert (home / "tasks" / payload["task_id"] / "manifest.json").exists()
 
 
+def test_cli_hello_world_plan_uses_configured_gpu_in_generated_sky_task(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[provider.vast]
+default_gpu = "RTX3060"
+max_hourly_cost_usd = 0.10
+datacenter_only = false
+
+[safety]
+autodown_idle_minutes = 5
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_CONFIG", str(config_path))
+
+    result = runner.invoke(app, ["hello-world", "--dry-run"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    task_file = home / "tasks" / payload["task_id"] / "sky-task.yaml"
+    assert payload["launch_args"][4] == str(task_file)
+    assert task_file.exists()
+    task_yaml = task_file.read_text(encoding="utf-8")
+    assert "accelerators: RTX3060:1" in task_yaml
+    assert "RTX4090" not in task_yaml
+
+
 def test_cli_hello_world_confirm_paid_requires_live_env(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("GPU_BURST_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("GPU_BURST_LIVE", raising=False)

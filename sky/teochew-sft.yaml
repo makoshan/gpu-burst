@@ -25,7 +25,8 @@ envs:
 setup: |
   set -euo pipefail
   cd ~
-  command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq git)
+  # runtime 镜像无 git 也无编译器;pyworld(sdist,C++ 扩展)需要 g++
+  (command -v git && command -v g++) >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq git g++)
   pip install -q awscli huggingface_hub
   if [ ! -d CosyVoice ]; then
     git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git

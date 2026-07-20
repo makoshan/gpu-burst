@@ -1,0 +1,21 @@
+resources:
+  cloud: vast
+  accelerators: RTX4090:1
+  disk_size: 40
+  use_spot: false
+
+workdir: .
+
+setup: |
+  set -e
+  python -V
+  pip install --quiet "paddlepaddle-gpu==3.2.2" -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+  pip install --quiet "paddleocr==3.7.0" "paddlex[ocr]==3.7.2"
+  python -c "import paddle; print('paddle', paddle.__version__, 'cuda', paddle.device.is_compiled_with_cuda())"
+
+run: |
+  set -e
+  nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+  python batch_cloud.py pages_dict out_dict --reverse
+  python batch_cloud.py pages_yd out_yd
+  echo CLOUD_OCR_ALL_DONE

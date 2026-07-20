@@ -16,6 +16,7 @@ from gpu_burst.ledger import Ledger, utc_now
 from gpu_burst.lifecycle import ItemState, TaskState
 from gpu_burst.manifests import TaskSpec, item_key, load_task_json, validate_for_run
 from gpu_burst.providers.skypilot import SkyExecutionError, SkyLaunchPlan, execute_sky_launch
+from gpu_burst.providers.vast_api import VastApiError, VastClient, verify_destroyed
 from gpu_burst.quote import build_quote
 from gpu_burst.safety.watchdog import scan_stale_tasks
 
@@ -234,22 +235,94 @@ def hello_world(
     ledger.write_manifest(task_id, manifest)
     ledger.append_event(task_id, "PROVISIONING", {"cluster_name": cluster_name})
 
+    launch_started_at = datetime.now(UTC)
+    try:
+        vast = VastClient()
+        balance_before = vast.current_balance()
+        pre_ids = {inst.instance_id for inst in vast.list_instances()}
+    except VastApiError as exc:
+        manifest["task_state"] = TaskState.FAILED
+        manifest["updated_at"] = utc_now()
+        manifest["error"] = "vast preflight failed"
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "FAILED", {"error": "vast preflight failed", "detail": str(exc)})
+        typer.echo(f"Pre-launch Vast API check failed: {exc}")
+        raise typer.Exit(2) from exc
+    ledger.append_event(task_id, "VAST_SNAPSHOT", {
+        "balance_before_usd": balance_before,
+        "preexisting_instances": sorted(pre_ids),
+    })
+
+    ours: list[dict[str, object]] = []
+
+    def observe_instances() -> None:
+        new = [inst for inst in vast.list_instances() if inst.instance_id not in pre_ids]
+        ours.extend(inst.as_dict() for inst in new)
+        ledger.append_event(task_id, "INSTANCE_OBSERVED", {"instances": [inst.as_dict() for inst in new]})
+
     def record_teardown() -> None:
         manifest["task_state"] = TaskState.TEARING_DOWN
         manifest["updated_at"] = utc_now()
         ledger.write_manifest(task_id, manifest)
         ledger.append_event(task_id, "TEARING_DOWN", {"cluster_name": cluster_name})
 
+    sky_error: SkyExecutionError | None = None
     try:
-        execute_sky_launch(plan, on_teardown=record_teardown)
+        execute_sky_launch(plan, on_launched=observe_instances, on_teardown=record_teardown)
     except SkyExecutionError as exc:
+        sky_error = exc
+
+    # Destroy verification against the Vast API is mandatory regardless of
+    # how the SkyPilot lifecycle ended: a failed `sky down` must not leak.
+    our_ids = {int(item["instance_id"]) for item in ours}
+    try:
+        # Also sweep instances the observation callback may have missed:
+        # anything alive now that predates neither the snapshot nor this task
+        # is treated as ours and must be gone before we call the run clean.
+        lingering_ids = {inst.instance_id for inst in vast.list_instances()} - pre_ids
+        verification = verify_destroyed(vast, our_ids | lingering_ids)
+    except VastApiError as exc:
+        verification = None
+        ledger.append_event(task_id, "DESTROY_VERIFY_ERROR", {"error": str(exc)})
+    if verification is not None:
+        event = "DESTROY_VERIFIED" if verification.verified else "DESTROY_LEAKED"
+        ledger.append_event(task_id, event, {
+            "checks": verification.checks,
+            "escalated": verification.escalated,
+            "leaked_ids": list(verification.leaked_ids),
+        })
+
+    runtime_hours = (datetime.now(UTC) - launch_started_at).total_seconds() / 3600
+    rates = [item["dph_total"] for item in ours if item.get("dph_total")]
+    expected_cost = round(sum(float(rate) for rate in rates) * runtime_hours, 4) if rates else None
+    try:
+        balance_after = vast.current_balance()
+    except VastApiError:
+        balance_after = None
+    billing = {
+        "balance_before_usd": balance_before,
+        "balance_after_usd": balance_after,
+        "balance_delta_usd": (round(balance_before - balance_after, 4)
+                              if balance_before is not None and balance_after is not None else None),
+        "wall_clock_hours": round(runtime_hours, 4),
+        "observed_rates_dph": rates,
+        "expected_cost_usd": expected_cost,
+        "instances": ours,
+    }
+    (ledger.task_dir(task_id) / "billing.json").write_text(
+        json.dumps(billing, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    ledger.append_event(task_id, "BILLING_RECORDED", billing)
+    manifest["billing"] = billing
+    manifest["destroy_verified"] = bool(verification and verification.verified)
+
+    if sky_error is not None or verification is None or not verification.verified:
         manifest["task_state"] = TaskState.FAILED
         manifest["updated_at"] = utc_now()
-        manifest["error"] = str(exc)
+        manifest["error"] = str(sky_error) if sky_error else "destroy verification did not pass"
         ledger.write_manifest(task_id, manifest)
-        ledger.append_event(task_id, "FAILED", {"error": str(exc)})
-        typer.echo(str(exc))
-        raise typer.Exit(1) from exc
+        ledger.append_event(task_id, "FAILED", {"error": manifest["error"]})
+        typer.echo(manifest["error"])
+        raise typer.Exit(1)
 
     manifest["task_state"] = TaskState.SUCCEEDED
     manifest["updated_at"] = utc_now()

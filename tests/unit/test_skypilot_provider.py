@@ -100,6 +100,55 @@ def test_execute_sky_launch_sanitizes_runner_exception_and_still_tears_down() ->
     assert calls == [plan.launch_args(), plan.down_args()]
 
 
+def test_execute_sky_launch_calls_on_launched_between_launch_and_teardown() -> None:
+    plan = SkyLaunchPlan("gb-test", Path("sky/hello-world.yaml"), 10)
+    order: list[str] = []
+
+    def runner(args, **kwargs):
+        order.append(args[1])
+        return CompletedProcess(args, 0, stdout="", stderr="")
+
+    skypilot.execute_sky_launch(
+        plan,
+        runner=runner,
+        on_launched=lambda: order.append("observe"),
+        on_teardown=lambda: order.append("teardown"),
+    )
+
+    assert order == ["launch", "observe", "teardown", "down"]
+
+
+def test_execute_sky_launch_calls_on_launched_even_when_launch_fails() -> None:
+    plan = SkyLaunchPlan("gb-test", Path("sky/hello-world.yaml"), 10)
+    observed: list[str] = []
+
+    def runner(args, **kwargs):
+        return CompletedProcess(args, 1 if args[1] == "launch" else 0, stdout="", stderr="")
+
+    with pytest.raises(skypilot.SkyExecutionError, match="sky launch failed"):
+        skypilot.execute_sky_launch(plan, runner=runner, on_launched=lambda: observed.append("observe"))
+
+    assert observed == ["observe"]
+
+
+def test_execute_sky_launch_sanitizes_on_launched_failure_and_still_tears_down() -> None:
+    plan = SkyLaunchPlan("gb-test", Path("sky/hello-world.yaml"), 10)
+    calls: list[list[str]] = []
+
+    def runner(args, **kwargs):
+        calls.append(args)
+        return CompletedProcess(args, 0, stdout="", stderr="")
+
+    def fail_observation():
+        raise OSError("secret api detail")
+
+    with pytest.raises(skypilot.SkyExecutionError, match="post-launch observation failed") as exc_info:
+        skypilot.execute_sky_launch(plan, runner=runner, on_launched=fail_observation)
+
+    assert "secret api detail" not in str(exc_info.value)
+    assert calls == [plan.launch_args(), plan.down_args()]
+
+
 def test_execute_sky_launch_still_tears_down_when_callback_fails() -> None:
     plan = SkyLaunchPlan("gb-test", Path("sky/hello-world.yaml"), 10)
     calls: list[list[str]] = []

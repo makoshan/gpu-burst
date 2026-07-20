@@ -37,9 +37,11 @@ def execute_sky_launch(
     plan: SkyLaunchPlan,
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    on_launched: Callable[[], None] | None = None,
     on_teardown: Callable[[], None] | None = None,
 ) -> None:
     launch_issue: str | None = None
+    launched_cb_issue: str | None = None
     callback_issue: str | None = None
     down_issue: str | None = None
     try:
@@ -49,6 +51,11 @@ def execute_sky_launch(
                 launch_issue = "sky launch failed"
         except OSError:
             launch_issue = "sky launch could not start"
+        if on_launched is not None:
+            try:
+                on_launched()
+            except Exception:
+                launched_cb_issue = "post-launch observation failed"
     finally:
         if on_teardown is not None:
             try:
@@ -62,6 +69,6 @@ def execute_sky_launch(
         except OSError:
             down_issue = "sky down could not start"
 
-    issues = [issue for issue in (launch_issue, callback_issue, down_issue) if issue]
+    issues = [issue for issue in (launch_issue, launched_cb_issue, callback_issue, down_issue) if issue]
     if issues:
         raise SkyExecutionError("; ".join(issues))

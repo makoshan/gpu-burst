@@ -164,16 +164,52 @@ def test_cli_hello_world_confirm_paid_requires_live_env(tmp_path, monkeypatch) -
     assert "GPU_BURST_LIVE=1" in result.stdout
 
 
+class _FakeVastInstance:
+    def __init__(self, instance_id: int, dph_total: float = 0.35):
+        self.instance_id = instance_id
+        self.dph_total = dph_total
+
+    def as_dict(self):
+        return {"instance_id": self.instance_id, "gpu_name": "RTX 4090",
+                "dph_total": self.dph_total, "geolocation": "US", "actual_status": "running"}
+
+
+class _FakeVastClient:
+    """Instance 90001 appears after launch and disappears after teardown."""
+
+    def __init__(self):
+        self.phase = "pre"
+        self.balances = [10.0, 9.9]
+
+    def list_instances(self):
+        if self.phase == "launched":
+            return [_FakeVastInstance(90001)]
+        return []
+
+    def destroy_instance(self, instance_id):
+        raise AssertionError("escalation should not trigger in the happy path")
+
+    def current_balance(self):
+        return self.balances.pop(0) if self.balances else 9.9
+
+
 def test_cli_hello_world_confirm_paid_executes_and_records_success(tmp_path, monkeypatch) -> None:
     home = tmp_path / "home"
     monkeypatch.setenv("GPU_BURST_HOME", str(home))
     monkeypatch.setenv("GPU_BURST_LIVE", "1")
     monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+    fake_vast = _FakeVastClient()
+    monkeypatch.setattr("gpu_burst.cli.VastClient", lambda: fake_vast)
     executed = []
 
-    def execute(plan, *, on_teardown):
+    def execute(plan, *, on_launched=None, on_teardown=None):
         executed.append(plan)
-        on_teardown()
+        fake_vast.phase = "launched"
+        if on_launched is not None:
+            on_launched()
+        fake_vast.phase = "down"
+        if on_teardown is not None:
+            on_teardown()
 
     monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", execute)
 
@@ -183,9 +219,15 @@ def test_cli_hello_world_confirm_paid_executes_and_records_success(tmp_path, mon
     payload = json.loads(result.stdout)
     assert payload["task_state"] == "SUCCEEDED"
     assert payload["dry_run"] is False
+    assert payload["destroy_verified"] is True
+    assert payload["billing"]["balance_delta_usd"] == 0.1
+    assert payload["billing"]["instances"][0]["instance_id"] == 90001
     assert len(executed) == 1
-    events = Ledger(home).read_events(payload["task_id"])
-    assert [event["event"] for event in events][-2:] == ["TEARING_DOWN", "SUCCEEDED"]
+    events = [event["event"] for event in Ledger(home).read_events(payload["task_id"])]
+    for expected in ("VAST_SNAPSHOT", "INSTANCE_OBSERVED", "TEARING_DOWN",
+                     "DESTROY_VERIFIED", "BILLING_RECORDED", "SUCCEEDED"):
+        assert expected in events
+    assert (home / "tasks" / payload["task_id"] / "billing.json").exists()
 
 
 def test_cli_hello_world_confirm_paid_records_sanitized_failure(tmp_path, monkeypatch) -> None:
@@ -193,9 +235,12 @@ def test_cli_hello_world_confirm_paid_records_sanitized_failure(tmp_path, monkey
     monkeypatch.setenv("GPU_BURST_HOME", str(home))
     monkeypatch.setenv("GPU_BURST_LIVE", "1")
     monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+    fake_vast = _FakeVastClient()
+    monkeypatch.setattr("gpu_burst.cli.VastClient", lambda: fake_vast)
 
-    def fail(_plan, *, on_teardown):
-        on_teardown()
+    def fail(_plan, *, on_launched=None, on_teardown=None):
+        if on_teardown is not None:
+            on_teardown()
         raise SkyExecutionError("sky launch failed")
 
     monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", fail)
@@ -208,6 +253,10 @@ def test_cli_hello_world_confirm_paid_records_sanitized_failure(tmp_path, monkey
     manifest = Ledger(home).read_manifest(task_dirs[0].name)
     assert manifest["task_state"] == "FAILED"
     assert manifest["error"] == "sky launch failed"
+    # even on failure the destroy verification and billing trail must exist
+    events = [event["event"] for event in Ledger(home).read_events(task_dirs[0].name)]
+    assert "BILLING_RECORDED" in events
+    assert "DESTROY_VERIFIED" in events
 
 
 def test_cli_watchdog_dry_run_reports_stale_tasks(tmp_path, monkeypatch) -> None:

@@ -30,6 +30,7 @@ class VastInstance:
     dph_total: float | None
     geolocation: str | None
     actual_status: str | None
+    label: str | None = None
 
     @classmethod
     def from_payload(cls, row: dict[str, Any]) -> "VastInstance":
@@ -39,6 +40,7 @@ class VastInstance:
             dph_total=row.get("dph_total"),
             geolocation=row.get("geolocation"),
             actual_status=row.get("actual_status"),
+            label=row.get("label"),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -48,6 +50,7 @@ class VastInstance:
             "dph_total": self.dph_total,
             "geolocation": self.geolocation,
             "actual_status": self.actual_status,
+            "label": self.label,
         }
 
 
@@ -103,9 +106,17 @@ class VastClient:
         try:
             self._request("DELETE", f"/instances/{instance_id}/", base=API_BASE_V1)
         except VastApiError as exc:
-            if "410" not in str(exc):
+            message = str(exc)
+            if "404" in message:
+                return  # already gone — destruction is the desired end state
+            if "410" not in message:
                 raise
-            self._request("DELETE", f"/instances/{instance_id}/")
+            try:
+                self._request("DELETE", f"/instances/{instance_id}/")
+            except VastApiError as fallback_exc:
+                if "404" in str(fallback_exc):
+                    return
+                raise
 
     def current_balance(self) -> float | None:
         payload = self._request("GET", "/users/current/")

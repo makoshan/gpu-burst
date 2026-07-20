@@ -101,3 +101,12 @@ def test_client_parses_instances() -> None:
     instances = client.list_instances()
     assert [i.instance_id for i in instances] == [5]
     assert instances[0].dph_total == 0.3
+
+
+def test_destroy_instance_treats_404_as_already_destroyed() -> None:
+    def opener_404(request, timeout):  # noqa: ANN001
+        import urllib.error
+        raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    client = VastClient(api_key="k", opener=opener_404)
+    client.destroy_instance(12345)  # must not raise

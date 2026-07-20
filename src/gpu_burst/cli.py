@@ -271,7 +271,11 @@ def hello_world(
     ours: list[dict[str, object]] = []
 
     def observe_instances() -> None:
-        new = [inst for inst in vast.list_instances() if inst.instance_id not in pre_ids]
+        # Claim by label prefix: SkyPilot labels Vast instances
+        # "<cluster_name>-<suffix>-head". Snapshot-diff would misclaim
+        # instances launched concurrently by another session.
+        new = [inst for inst in vast.list_instances()
+               if (inst.label or "").startswith(cluster_name)]
         ours.extend(inst.as_dict() for inst in new)
         ledger.append_event(task_id, "INSTANCE_OBSERVED", {"instances": [inst.as_dict() for inst in new]})
 

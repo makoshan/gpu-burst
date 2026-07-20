@@ -166,13 +166,15 @@ def test_cli_hello_world_confirm_paid_requires_live_env(tmp_path, monkeypatch) -
 
 
 class _FakeVastInstance:
-    def __init__(self, instance_id: int, dph_total: float = 0.35):
+    def __init__(self, instance_id: int, dph_total: float = 0.35, label: str = ""):
         self.instance_id = instance_id
         self.dph_total = dph_total
+        self.label = label
 
     def as_dict(self):
         return {"instance_id": self.instance_id, "gpu_name": "RTX 4090",
-                "dph_total": self.dph_total, "geolocation": "US", "actual_status": "running"}
+                "dph_total": self.dph_total, "geolocation": "US",
+                "actual_status": "running", "label": self.label}
 
 
 class _FakeVastClient:
@@ -181,10 +183,11 @@ class _FakeVastClient:
     def __init__(self):
         self.phase = "pre"
         self.balances = [10.0, 9.9]
+        self.label_prefix = ""
 
     def list_instances(self):
         if self.phase == "launched":
-            return [_FakeVastInstance(90001)]
+            return [_FakeVastInstance(90001, label=f"{self.label_prefix}-94-head")]
         return []
 
     def destroy_instance(self, instance_id):
@@ -205,6 +208,7 @@ def test_cli_hello_world_confirm_paid_executes_and_records_success(tmp_path, mon
 
     def execute(plan, *, on_launched=None, on_teardown=None):
         executed.append(plan)
+        fake_vast.label_prefix = plan.cluster_name
         fake_vast.phase = "launched"
         if on_launched is not None:
             on_launched()

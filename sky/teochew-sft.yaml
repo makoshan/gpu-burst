@@ -33,13 +33,14 @@ setup: |
   cd CosyVoice
   git checkout "$COSY_COMMIT" && git submodule update --init --recursive
   # 护栏: requirements 不许动 torch 系(镜像已带 2.7.1+cu128,降级=前功尽弃)
-  grep -viE "^(torch|torchaudio|torchvision)\b" requirements.txt > /tmp/req.txt
+  # deepspeed 也在 requirements 里且装包时探测 CUDA_HOME(runtime 镜像必炸),一并滤掉
+  grep -viE "^(torch|torchaudio|torchvision|deepspeed)\b" requirements.txt > /tmp/req.txt
   pip install -q -r /tmp/req.txt
   python -c "import torchaudio" 2>/dev/null || pip install -q torchaudio==2.7.1
   # 坑1+5: train.py 顶层 import deepspeed;而 runtime 镜像无 CUDA 工具链,
   # deepspeed 的 pip 安装在 egg_info 阶段就探测 CUDA_HOME 直接炸。
   # 先试关掉 op 预编译真装;不行就写桩模块(torch_ddp 路径只需这几个符号)。
-  DS_BUILD_OPS=0 pip install -q deepspeed==0.19.2 || python - <<'PYSTUB'
+  python - <<'PYSTUB'
   import os, site
   sp = site.getsitepackages()[0]
   base = os.path.join(sp, 'deepspeed')

@@ -12,7 +12,8 @@ resources:
   disk_size: 60
   use_spot: false
   # 与 thursday-win 验证环境对齐: torch 2.7.1 + cu128
-  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+  # runtime 而非 devel: deepspeed 只被 import 不 JIT 编译,省 ~4GB 镜像拉取
+  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 envs:
   TASK_ID: teochew-sft-20260720
@@ -24,6 +25,7 @@ envs:
 setup: |
   set -euo pipefail
   cd ~
+  command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq git)
   pip install -q awscli huggingface_hub
   if [ ! -d CosyVoice ]; then
     git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git

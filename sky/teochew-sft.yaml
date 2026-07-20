@@ -33,6 +33,10 @@ setup: |
   cd CosyVoice
   git checkout "$COSY_COMMIT" && git submodule update --init --recursive
   # 护栏: requirements 不许动 torch 系(镜像已带 2.7.1+cu128,降级=前功尽弃)
+  # 老式 sdist(conformer 等)的 setup.py 还 import pkg_resources;setuptools>=81 删了它。
+  # PIP_CONSTRAINT 对 pip 的隔离构建环境同样生效,是唯一能钉住构建端 setuptools 的姿势。
+  printf 'setuptools<81\n' > /tmp/pip-constraints.txt
+  export PIP_CONSTRAINT=/tmp/pip-constraints.txt
   # deepspeed 也在 requirements 里且装包时探测 CUDA_HOME(runtime 镜像必炸),一并滤掉
   grep -viE "^(torch|torchaudio|torchvision|deepspeed)\b" requirements.txt > /tmp/req.txt
   pip install -q -r /tmp/req.txt

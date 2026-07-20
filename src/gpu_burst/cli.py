@@ -182,6 +182,9 @@ def cancel(task_id: str) -> None:
 def hello_world(
     dry_run: bool = typer.Option(False, "--dry-run", help="Write a local hello-world plan without launching cloud resources."),
     confirm_paid: bool = typer.Option(False, "--confirm-paid", help="Required before a paid hello-world launch."),
+    allow_concurrent: bool = typer.Option(
+        False, "--allow-concurrent",
+        help="Launch even when the Vast account already has running instances (another session's cluster)."),
 ) -> None:
     if not dry_run and not confirm_paid:
         typer.echo("Use --confirm-paid for paid cloud execution, or --dry-run for local planning.")
@@ -252,6 +255,18 @@ def hello_world(
         "balance_before_usd": balance_before,
         "preexisting_instances": sorted(pre_ids),
     })
+    if pre_ids and not allow_concurrent:
+        # Concurrent sky sessions share ~/.sky state and the Vast account;
+        # a parallel cluster nearly caused cross-session damage on 2026-07-20.
+        message = (f"Vast account already has running instances {sorted(pre_ids)} "
+                   "(another session's cluster?). Re-run with --allow-concurrent to override.")
+        manifest["task_state"] = TaskState.FAILED
+        manifest["updated_at"] = utc_now()
+        manifest["error"] = message
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "ABORTED_CONCURRENT", {"preexisting_instances": sorted(pre_ids)})
+        typer.echo(message)
+        raise typer.Exit(2)
 
     ours: list[dict[str, object]] = []
 

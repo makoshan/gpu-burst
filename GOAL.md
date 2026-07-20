@@ -107,6 +107,18 @@ execution unless the explicit live prerequisites are present.
   Blocker is not repo code. Choosing a GPU/region with real >=64GB NA offers
   conflicts with the `max_hourly_cost_usd = 0.10` policy, so the next step is a
   GPU/cost policy decision, not a code fix.
+- 2026-07-20: Third guarded paid run (Mako-approved, RTX4090 @ max $0.60/hr
+  after the RTX3060 catalog dead-end). First run to clear offer matching: real
+  instance 45404302 (Texas, $0.55/hr) provisioned under
+  `gb-hello-world-1cdb58`. Run was killed by the operator mid-lifecycle to
+  protect a concurrent `teochew-sft` cluster on the same account/machine; the
+  instance was destroyed manually and destruction verified via the Vast v1 API
+  (total burn ~$0.2, no leak). New code landed this session: vast_api.py
+  (v1 instances endpoint, destroy escalation, balance reconciliation, network
+  retries), destroy-verification + billing.json wired into the paid
+  hello-world, and a pre-launch concurrency guard (`--allow-concurrent`
+  override) so parallel sessions cannot collide again. Full clean-loop
+  validation still pending: rerun when no foreign cluster is live.
 - 2026-07-12: Diagnosed the provisioning failure and fixed a repo-side planning
   defect found during the run: hello-world now writes a per-task SkyPilot YAML
   using `provider.vast.default_gpu` instead of always launching the static

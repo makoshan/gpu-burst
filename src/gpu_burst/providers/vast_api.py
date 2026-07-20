@@ -64,26 +64,35 @@ class VastClient:
         self._api_key = api_key
         self._opener = opener or urllib.request.urlopen
 
-    def _request(self, method: str, path: str, *, base: str = API_BASE) -> dict[str, Any]:
-        request = urllib.request.Request(
-            f"{base}{path}",
-            method=method,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Accept": "application/json",
-            },
-        )
-        try:
-            with self._opener(request, timeout=30) as response:
-                body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            raise VastApiError(f"vast api {method} {path} failed with HTTP {exc.code}") from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise VastApiError(f"vast api {method} {path} failed: network error") from exc
-        try:
-            return json.loads(body) if body else {}
-        except json.JSONDecodeError as exc:
-            raise VastApiError(f"vast api {method} {path} returned malformed JSON") from exc
+    def _request(self, method: str, path: str, *, base: str = API_BASE,
+                 network_retries: int = 3) -> dict[str, Any]:
+        last_network_error: Exception | None = None
+        for attempt in range(network_retries):
+            request = urllib.request.Request(
+                f"{base}{path}",
+                method=method,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Accept": "application/json",
+                },
+            )
+            try:
+                with self._opener(request, timeout=30) as response:
+                    body = response.read().decode("utf-8")
+            except urllib.error.HTTPError as exc:
+                raise VastApiError(f"vast api {method} {path} failed with HTTP {exc.code}") from exc
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last_network_error = exc
+                if attempt < network_retries - 1:
+                    time.sleep(2.0 * (attempt + 1))
+                continue
+            try:
+                return json.loads(body) if body else {}
+            except json.JSONDecodeError as exc:
+                raise VastApiError(f"vast api {method} {path} returned malformed JSON") from exc
+        raise VastApiError(
+            f"vast api {method} {path} failed: network error after {network_retries} attempts"
+        ) from last_network_error
 
     def list_instances(self) -> list[VastInstance]:
         payload = self._request("GET", "/instances/", base=API_BASE_V1)

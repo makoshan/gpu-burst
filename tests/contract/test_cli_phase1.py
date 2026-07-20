@@ -231,6 +231,29 @@ def test_cli_hello_world_confirm_paid_executes_and_records_success(tmp_path, mon
     assert (home / "tasks" / payload["task_id"] / "billing.json").exists()
 
 
+def test_cli_hello_world_confirm_paid_aborts_on_concurrent_instances(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_LIVE", "1")
+    monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+    fake_vast = _FakeVastClient()
+    fake_vast.phase = "launched"  # a foreign instance is already running
+    monkeypatch.setattr("gpu_burst.cli.VastClient", lambda: fake_vast)
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("sky launch must not run when concurrent instances exist")
+
+    monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", must_not_run)
+
+    result = runner.invoke(app, ["hello-world", "--confirm-paid"])
+
+    assert result.exit_code == 2
+    assert "--allow-concurrent" in result.stdout
+    task_dirs = list((home / "tasks").iterdir())
+    events = [event["event"] for event in Ledger(home).read_events(task_dirs[0].name)]
+    assert "ABORTED_CONCURRENT" in events
+
+
 def test_cli_hello_world_confirm_paid_records_sanitized_failure(tmp_path, monkeypatch) -> None:
     home = tmp_path / "home"
     monkeypatch.setenv("GPU_BURST_HOME", str(home))

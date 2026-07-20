@@ -1,0 +1,118 @@
+# Teochew CosyVoice2-0.5B llm SFT — gpu-burst 第一个真实训练负载
+# 管线与补丁均已在 thursday-win 5070Ti 上验证(2026-07-20);此任务是云端可复现版。
+# 数据: gpu-burst-jobs/$TASK_ID/input/teochew-sft-corpus.tar.gz (research-only 档,
+#       版权课程音频衍生,仅开发实验;产物不得直接上产品)
+# 发射: sky/launch-teochew-sft.sh (注入 R2 凭据,--down 跑完即毁)
+
+name: teochew-sft
+
+resources:
+  cloud: vast
+  accelerators: RTX4090:1
+  disk_size: 60
+  use_spot: false
+  # 与 thursday-win 验证环境对齐: torch 2.7.1 + cu128
+  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+
+envs:
+  TASK_ID: teochew-sft-20260720
+  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
+  MAX_EPOCH: "6"        # 已知 409 条数据 epoch_1 即最佳,6 个足够含冗余
+  COSY_COMMIT: 074ca6d  # 与 thursday-win 相同 commit
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 由发射脚本 --env 注入,不落盘
+
+setup: |
+  set -euo pipefail
+  cd ~
+  pip install -q awscli huggingface_hub
+  if [ ! -d CosyVoice ]; then
+    git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git
+  fi
+  cd CosyVoice
+  git checkout "$COSY_COMMIT" && git submodule update --init --recursive
+  # 护栏: requirements 不许动 torch 系(镜像已带 2.7.1+cu128,降级=前功尽弃)
+  grep -viE "^(torch|torchaudio|torchvision)\b" requirements.txt > /tmp/req.txt
+  pip install -q -r /tmp/req.txt
+  python -c "import torchaudio" 2>/dev/null || pip install -q torchaudio==2.7.1
+  pip install -q deepspeed==0.19.2   # 坑1: train.py 顶层 import,哪怕 torch_ddp
+  python - <<'PY'
+  from huggingface_hub import snapshot_download
+  snapshot_download('FunAudioLLM/CosyVoice2-0.5B', local_dir='pretrained_models/CosyVoice2-0.5B')
+  print('model ready')
+  PY
+  # 坑3: torch>=2.7 删了 ProcessGroup.options -> 单卡跳过 join barrier
+  python - <<'PY'
+  F='cosyvoice/utils/train_utils.py'
+  src=open(F).read()
+  if 'WORLD_SIZE_SINGLE_GPU_SKIP' not in src:
+    src=src.replace(
+        'def cosyvoice_join(group_join, info_dict):',
+        'def cosyvoice_join(group_join, info_dict):\n'
+        '    # WORLD_SIZE_SINGLE_GPU_SKIP: torch>=2.7 removed ProcessGroup.options;\n'
+        '    # single-GPU training never needs the uneven-data join barrier.\n'
+        '    if int(os.environ.get("WORLD_SIZE", "1")) == 1:\n'
+        '        return False\n')
+    open(F,'w').write(src); print('join patched')
+  else: print('join already patched')
+  PY
+  # 坑4: llm.pt 混 fp32/bf16, GradScaler 不支持 bf16 -> 整模型 fp32(不用 --use_amp)
+  python - <<'PY'
+  import re
+  F='cosyvoice/bin/train.py'
+  src=open(F).read()
+  if 'FORCE_FP32_SINGLE_GPU' not in src:
+    m=re.search(r'\n(\s*)(model = wrap_cuda_model\(args, model\))', src)
+    assert m, 'anchor not found'
+    src=src.replace(m.group(0),
+        '\n'+m.group(1)+'# FORCE_FP32_SINGLE_GPU: mixed fp32/bf16 checkpoint breaks without amp\n'
+        +m.group(1)+'model = model.float()'+m.group(0), 1)
+    open(F,'w').write(src); print('fp32 patched')
+  else: print('fp32 already patched')
+  PY
+  # 数据: R2 拉 tarball,重生成 data lists(tar 内是 win 绝对路径,不可用)
+  mkdir -p ~/teochew-sft && cd ~/teochew-sft
+  aws s3 cp "s3://gpu-burst-jobs/$TASK_ID/input/teochew-sft-corpus.tar.gz" . --endpoint-url "$R2_ENDPOINT"
+  tar xzf teochew-sft-corpus.tar.gz
+  ls $HOME/teochew-sft/data/train/parquet/parquet_*.tar > data/train.data.list
+  ls $HOME/teochew-sft/data/dev/parquet/parquet_*.tar > data/dev.data.list
+  wc -l data/train.data.list data/dev.data.list
+
+run: |
+  set -euo pipefail
+  W=$HOME/teochew-sft
+  C=$HOME/CosyVoice
+  E=$C/examples/libritts/cosyvoice2
+  P=$C/pretrained_models/CosyVoice2-0.5B
+  sed -i -E "s/max_epoch: [0-9]+/max_epoch: $MAX_EPOCH/" $E/conf/cosyvoice2.yaml
+  grep max_epoch $E/conf/cosyvoice2.yaml
+  cd $E && . ./path.sh
+  export CUDA_VISIBLE_DEVICES=0
+  set +e
+  torchrun --nnodes=1 --nproc_per_node=1 \
+    --rdzv_id=1986 --rdzv_backend=c10d --rdzv_endpoint=localhost:12355 \
+    $C/cosyvoice/bin/train.py \
+    --train_engine torch_ddp \
+    --config $E/conf/cosyvoice2.yaml \
+    --train_data $W/data/train.data.list \
+    --cv_data $W/data/dev.data.list \
+    --qwen_pretrain_path $P/CosyVoice-BlankEN \
+    --onnx_path $P \
+    --model llm \
+    --checkpoint $P/llm.pt \
+    --model_dir $W/exp/llm \
+    --tensorboard_dir $W/tensorboard/llm \
+    --ddp.dist_backend nccl \
+    --num_workers 2 --prefetch 100 --pin_memory \
+    --deepspeed_config $E/conf/ds_stage2.json \
+    --deepspeed.save_states model+optimizer 2>&1 | tee $W/train.log
+  rc=$?
+  set -e
+  # 无论成败都回传产物+日志,便于账后验尸
+  aws s3 cp $W/train.log "s3://gpu-burst-jobs/$TASK_ID/output/train.log" --endpoint-url "$R2_ENDPOINT" || true
+  if ls $W/exp/llm/epoch_*_whole.pt >/dev/null 2>&1; then
+    aws s3 cp $W/exp/llm "s3://gpu-burst-jobs/$TASK_ID/output/exp-llm/" --recursive --endpoint-url "$R2_ENDPOINT"
+  fi
+  echo "=== CV summary ==="
+  grep -aoE "Epoch [0-9]+ Step [0-9]+ CV info.*" $W/train.log | tail -10 || true
+  echo "TEOCHEW_SFT_RC=$rc"
+  exit $rc

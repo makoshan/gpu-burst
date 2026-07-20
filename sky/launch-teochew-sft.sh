@@ -10,7 +10,8 @@ AK=$(aws configure get aws_access_key_id --profile gpu-burst-r2)
 SK=$(aws configure get aws_secret_access_key --profile gpu-burst-r2)
 [ -n "$AK" ] && [ -n "$SK" ] || { echo "missing gpu-burst-r2 creds"; exit 1; }
 
-ARGS=(launch -c teochew-sft -y -d --down
+# bring-up 阶段不 --down:失败后机器保留现场供诊断,跑通后再恢复自毁
+ARGS=(launch -c teochew-sft -y -d
   --env AWS_ACCESS_KEY_ID="$AK"
   --env AWS_SECRET_ACCESS_KEY="$SK"
   sky/teochew-sft.yaml)

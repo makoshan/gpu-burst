@@ -111,6 +111,8 @@ run: |
   P=$C/pretrained_models/CosyVoice2-0.5B
   sed -i -E "s/max_epoch: [0-9]+/max_epoch: $MAX_EPOCH/" $E/conf/cosyvoice2.yaml
   grep max_epoch $E/conf/cosyvoice2.yaml
+  # path.sh 里 export PYTHONPATH=...:$PYTHONPATH,在 set -u 下未定义即炸
+  export PYTHONPATH="${PYTHONPATH:-}"
   cd $E && . ./path.sh
   export CUDA_VISIBLE_DEVICES=0
   set +e

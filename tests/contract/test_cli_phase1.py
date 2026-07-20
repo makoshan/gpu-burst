@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 from gpu_burst.cli import app
 from gpu_burst.ledger import Ledger
 from gpu_burst.providers.skypilot import SkyExecutionError
+from gpu_burst.providers.vast_api import VastApiError, verify_destroyed
 from tests.unit.test_manifests import valid_task_dict
 
 
@@ -257,6 +258,78 @@ def test_cli_hello_world_confirm_paid_records_sanitized_failure(tmp_path, monkey
     events = [event["event"] for event in Ledger(home).read_events(task_dirs[0].name)]
     assert "BILLING_RECORDED" in events
     assert "DESTROY_VERIFIED" in events
+
+
+def test_cli_hello_world_confirm_paid_records_preflight_failure(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_LIVE", "1")
+    monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+
+    def broken_client():
+        raise VastApiError("vast api GET /users/current/ failed: network error")
+
+    monkeypatch.setattr("gpu_burst.cli.VastClient", broken_client)
+    executed = []
+    monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", lambda *args, **kwargs: executed.append(args))
+
+    result = runner.invoke(app, ["hello-world", "--confirm-paid"])
+
+    assert result.exit_code == 2
+    assert executed == []
+    task_dirs = list((home / "tasks").iterdir())
+    manifest = Ledger(home).read_manifest(task_dirs[0].name)
+    assert manifest["task_state"] == "FAILED"
+    assert manifest["error"] == "vast preflight failed"
+
+
+def test_cli_hello_world_confirm_paid_reports_leak_when_instance_survives(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("GPU_BURST_HOME", str(home))
+    monkeypatch.setenv("GPU_BURST_LIVE", "1")
+    monkeypatch.setattr("gpu_burst.cli._require_live_ready", lambda: None)
+
+    class LeakyVastClient(_FakeVastClient):
+        def __init__(self):
+            super().__init__()
+            self.destroy_attempts: list[int] = []
+
+        def list_instances(self):
+            if self.phase in ("launched", "down"):
+                return [_FakeVastInstance(90001)]
+            return []
+
+        def destroy_instance(self, instance_id):
+            self.destroy_attempts.append(instance_id)
+
+    fake_vast = LeakyVastClient()
+    monkeypatch.setattr("gpu_burst.cli.VastClient", lambda: fake_vast)
+    monkeypatch.setattr(
+        "gpu_burst.cli.verify_destroyed",
+        lambda client, ids: verify_destroyed(client, ids, sleeper=lambda _: None),
+    )
+
+    def execute(plan, *, on_launched=None, on_teardown=None):
+        fake_vast.phase = "launched"
+        if on_launched is not None:
+            on_launched()
+        fake_vast.phase = "down"
+        if on_teardown is not None:
+            on_teardown()
+
+    monkeypatch.setattr("gpu_burst.cli.execute_sky_launch", execute)
+
+    result = runner.invoke(app, ["hello-world", "--confirm-paid"])
+
+    assert result.exit_code == 1
+    assert "destroy verification did not pass" in result.stdout
+    assert fake_vast.destroy_attempts == [90001]
+    task_dirs = list((home / "tasks").iterdir())
+    manifest = Ledger(home).read_manifest(task_dirs[0].name)
+    assert manifest["task_state"] == "FAILED"
+    assert manifest["destroy_verified"] is False
+    events = [event["event"] for event in Ledger(home).read_events(task_dirs[0].name)]
+    assert "DESTROY_LEAKED" in events
 
 
 def test_cli_watchdog_dry_run_reports_stale_tasks(tmp_path, monkeypatch) -> None:

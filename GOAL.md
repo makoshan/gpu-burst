@@ -58,6 +58,23 @@ execution unless the explicit live prerequisites are present.
 
 ## Progress Log
 
+- 2026-07-20: Implemented the missing paid-loop pieces: `providers/vast_api.py`
+  (stdlib HTTP client for the Vast API — works even when SkyPilot is broken),
+  `verify_destroyed` polling with force-destroy escalation for leftovers,
+  pre-launch balance/instance snapshot, post-run lingering-instance sweep
+  (current minus snapshot, so unobserved leaks are still caught), and billing
+  correlation (`billing.json` + `BILLING_RECORDED` with balance delta, wall
+  clock, and observed $/h). Two concurrent agent sessions worked on this;
+  converged on `vast_api.py`, duplicate `vast_audit.py` was removed.
+- 2026-07-20: Resolved the GPU/cost policy blocker from 07-12: user config now
+  sets `default_gpu = "RTX4090"`, `max_hourly_cost_usd = 0.60`. Basis: live
+  verified 1x RTX_4090 offers with cpu_ram>=64GB exist from $0.33/h across
+  US/EU/AS, matching the coarse catalog rows (`1x-RTX_4090-32-65536`) in
+  multiple pinned georegions, so offer matching can no longer dead-end the way
+  the single-row RTX3060 policy did.
+- 2026-07-20: Paid validation run claimed by the Claude session working in this
+  repo tonight; other sessions should not launch concurrently (billing
+  attribution assumes a clean account during the run).
 - 2026-07-12: Started the first guarded paid CLI hello-world run requested by
   Mako to validate the full `gpu-burst -> SkyPilot -> Vast -> nvidia-smi ->
   sky down -> ledger` lifecycle.

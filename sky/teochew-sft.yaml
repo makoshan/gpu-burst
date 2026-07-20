@@ -36,7 +36,25 @@ setup: |
   grep -viE "^(torch|torchaudio|torchvision)\b" requirements.txt > /tmp/req.txt
   pip install -q -r /tmp/req.txt
   python -c "import torchaudio" 2>/dev/null || pip install -q torchaudio==2.7.1
-  pip install -q deepspeed==0.19.2   # 坑1: train.py 顶层 import,哪怕 torch_ddp
+  # 坑1+5: train.py 顶层 import deepspeed;而 runtime 镜像无 CUDA 工具链,
+  # deepspeed 的 pip 安装在 egg_info 阶段就探测 CUDA_HOME 直接炸。
+  # 先试关掉 op 预编译真装;不行就写桩模块(torch_ddp 路径只需这几个符号)。
+  DS_BUILD_OPS=0 pip install -q deepspeed==0.19.2 || python - <<'PYSTUB'
+  import os, site
+  sp = site.getsitepackages()[0]
+  base = os.path.join(sp, 'deepspeed')
+  os.makedirs(os.path.join(base, 'runtime', 'zero'), exist_ok=True)
+  open(os.path.join(base, '__init__.py'), 'w').write(
+      "# torch_ddp-only stub: CosyVoice imports deepspeed unconditionally.\n"
+      "def add_config_arguments(parser):\n    return parser\n"
+      "def init_distributed(*a, **k):\n    raise RuntimeError('deepspeed stub: use torch_ddp')\n"
+      "def initialize(*a, **k):\n    raise RuntimeError('deepspeed stub: use torch_ddp')\n")
+  open(os.path.join(base, 'runtime', '__init__.py'), 'w').write('')
+  open(os.path.join(base, 'runtime', 'zero', '__init__.py'), 'w').write('')
+  open(os.path.join(base, 'runtime', 'zero', 'stage_1_and_2.py'), 'w').write(
+      "def estimate_zero2_model_states_mem_needs_all_live(*a, **k):\n    return None\n")
+  print('deepspeed stubbed (torch_ddp only)')
+  PYSTUB
   python - <<'PY'
   from huggingface_hub import snapshot_download
   snapshot_download('FunAudioLLM/CosyVoice2-0.5B', local_dir='pretrained_models/CosyVoice2-0.5B')

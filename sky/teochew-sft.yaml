@@ -38,6 +38,8 @@ setup: |
   # PIP_CONSTRAINT 对 pip 的隔离构建环境同样生效,是唯一能钉住构建端 setuptools 的姿势。
   printf 'setuptools<81\n' > /tmp/pip-constraints.txt
   export PIP_CONSTRAINT=/tmp/pip-constraints.txt
+  # 大 wheel(onnxruntime-gpu 200MB, Azure 源)易断流:重试+断点续传+放宽超时
+  export PIP_RETRIES=5 PIP_RESUME_RETRIES=5 PIP_DEFAULT_TIMEOUT=60
   # deepspeed 也在 requirements 里且装包时探测 CUDA_HOME(runtime 镜像必炸),一并滤掉
   grep -viE "^(torch|torchaudio|torchvision|deepspeed)\b" requirements.txt > /tmp/req.txt
   pip install -q -r /tmp/req.txt

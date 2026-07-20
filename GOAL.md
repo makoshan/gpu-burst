@@ -58,6 +58,16 @@ execution unless the explicit live prerequisites are present.
 
 ## Progress Log
 
+- 2026-07-21: Aborted the in-flight paid validation run
+  `hello-world-20260720-154044-1cdb58` on Mako's decision. Reason: a
+  concurrently launched `teochew-sft` training cluster postdated the run's
+  pre-launch snapshot, so the post-run sweep would have force-destroyed the
+  training instance. The CLI was killed pre-sweep, `sky down` plus a direct
+  Vast destroy removed instance 45404302 (verified via API; teochew-sft
+  untouched), and the ledger got a manual TEARING_DOWN / DESTROY_VERIFIED /
+  FAILED trail. Credit delta for the night ~= 0.29 USD (9.7430 -> 9.4523,
+  includes concurrent teochew burn). Mako chose not to re-run: the end-to-end
+  paid SUCCEEDED path with billing.json remains unverified on real cloud.
 - 2026-07-20: Implemented the missing paid-loop pieces: `providers/vast_api.py`
   (stdlib HTTP client for the Vast API — works even when SkyPilot is broken),
   `verify_destroyed` polling with force-destroy escalation for leftovers,
@@ -259,6 +269,21 @@ execution unless the explicit live prerequisites are present.
 - The run also exposed that the previous static `sky/hello-world.yaml` ignored
   the configured GPU and selected RTX4090 resources. That repo-side defect is
   fixed by generating a per-task SkyPilot YAML from settings.
+
+- Open issue (concurrency friendly fire): the leak sweep defines "ours" as
+  any instance absent from the pre-launch snapshot, so two concurrent paid
+  runs from one account destroy each other's instances. Recommended fix:
+  ownership by instance label — Vast labels carry the SkyPilot cluster name
+  (e.g. `gb-hello-world-1cdb58-…-head`), so both observation and the sweep
+  can filter on the `gb-hello-world-<suffix>` prefix instead of set
+  difference. Until then paid runs assume an otherwise-idle account (a
+  `--allow-concurrent` guard is being added).
+- Open issue (destroy escalation fallback): during the 07-21 manual cleanup,
+  `VastClient.destroy_instance` got HTTP 404 from the v1 DELETE and the v0
+  fallback only engages on 410. Ambiguous root cause (the racing CLI destroy
+  had likely already removed the instance), but the force-destroy escalation
+  is the last line of leak defense and should tolerate 404/410 both, ideally
+  treating "instance not found" as success.
 
 ## Final Review
 

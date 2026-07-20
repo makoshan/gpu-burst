@@ -36,7 +36,7 @@ CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 c
 gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run`。`hello-world --confirm-paid` 已具备 SkyPilot launch/finally down 生命周期，但仍属 experimental，尚未完成 Vast API 销毁复核和账单关联；song-cards 的自动化云端执行仍未实现。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
+已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run`。`hello-world --confirm-paid` 已具备完整生命周期：SkyPilot launch/finally down + Vast API 销毁复核（轮询 + 残留强制销毁升级）+ 账单关联（billing.json：余额差 / 实测时价 / 预期成本），有单测与 contract 测试覆盖；但端到端付费 SUCCEEDED 路径尚未在真云上走通（2026-07-20 验证跑因并发会话冲突被操作者中止，详见 GOAL.md），且清扫逻辑假设跑期间账户内无并发实例。song-cards 的自动化云端执行仍未实现。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
 
 本地验证：
 

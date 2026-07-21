@@ -31,3 +31,21 @@ onstart.log 上传路径不带 attempt 标识 → 第二发死得早没覆盖，
 - 宿主机抽卡失败率今晚 2/3——创建后 N 分钟无心跳即弃抽重来要做成自动
 - 账单：三次尝试合计 ~$0.9（含 hello-world 验证在内今晚总支出 $0.87 差值系
   teochew-sft 并行消耗，见 gpu-burst ledger billing.json）
+
+## 2026-07-21 上午 hz-sft 训练发射实录（onstart 自举模式定版 + 两个新教训）
+
+**成功**：第二发（45434387，UK $0.468/hr）zero-SSH 架构全程跑通：onstart 自举
+（pip awscli → R2 拉 payload → bash）→ 装配+训练+回传 **约 15 分钟端到端**，
+10 epoch 检查点全部上 R2，CV 最佳 epoch_2-3（loss 5.57/acc 8.5%，187 条音档数据，
+之后过拟合——与 teochew"epoch_1 即最佳"同律）。**onstart+R2 自举 = gpu-burst 定版发射模式**。
+
+**新教训**：
+1. **sky 发射第三种死法**：宿主机密钥注入坏死（proxy 端口对、代理通，但容器
+   authorized_keys 始终没有 sky 公钥；`vastai attach ssh` 报 already associated、
+   reboot 也无效）→ 快速弃抽是唯一解。sky 对 Vast 的三种死法齐了：过时代理端口/
+   代理不就绪/密钥注入坏死——**训练负载也走直调 API + onstart，别再用 sky launch**。
+2. **容器内 `shutdown -h now` 是空枪**（无 init）——自动关机和保险丝全部失效，
+   ALL_DONE 后空烧 35 分钟才人工销毁。正解：create 返回的 **instance_api_key 就是
+   给实例自毁用的**——把 instance_id+key 注入 env，脚本收尾直接
+   `curl -X DELETE console.vast.ai/api/v0/instances/$ID/ -H "Bearer $KEY"` 自杀。
+   下版 launcher 落地。

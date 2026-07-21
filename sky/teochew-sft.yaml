@@ -56,7 +56,11 @@ setup: |
   os.makedirs(os.path.join(base, 'runtime', 'zero'), exist_ok=True)
   open(os.path.join(base, '__init__.py'), 'w').write(
       "# torch_ddp-only stub: CosyVoice imports deepspeed unconditionally.\n"
-      "def add_config_arguments(parser):\n    return parser\n"
+      "def add_config_arguments(parser):\n"
+      "    # 真 deepspeed 会注册这两个参数;train.py 的调用带 --deepspeed_config\n"
+      "    parser.add_argument('--deepspeed', action='store_true')\n"
+      "    parser.add_argument('--deepspeed_config', type=str, default=None)\n"
+      "    return parser\n"
       "def init_distributed(*a, **k):\n    raise RuntimeError('deepspeed stub: use torch_ddp')\n"
       "def initialize(*a, **k):\n    raise RuntimeError('deepspeed stub: use torch_ddp')\n")
   open(os.path.join(base, 'runtime', '__init__.py'), 'w').write('')

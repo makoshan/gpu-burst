@@ -1,0 +1,185 @@
+# Teochew CosyVoice2-0.5B llm SFT — gpu-burst 第一个真实训练负载
+# 管线与补丁均已在 thursday-win 5070Ti 上验证(2026-07-20);此任务是云端可复现版。
+# 数据: gpu-burst-jobs/$TASK_ID/input/teochew-sft-corpus.tar.gz (research-only 档,
+#       版权课程音频衍生,仅开发实验;产物不得直接上产品)
+# 发射: sky/launch-teochew-sft.sh (注入 R2 凭据,--down 跑完即毁)
+
+name: teochew-sft
+
+resources:
+  cloud: vast
+  accelerators: RTX4090:1
+  disk_size: 60
+  use_spot: false
+  # 与 thursday-win 验证环境对齐: torch 2.7.1 + cu128
+  # runtime 而非 devel: deepspeed 只被 import 不 JIT 编译,省 ~4GB 镜像拉取
+  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+
+envs:
+  TASK_ID: teochew-sft-v2-20260721
+  OLD_TASK_ID: teochew-sft-20260720   # 483 句语料沿用旧路径(R2 不支持桶内复制)
+  CARDS_LIMIT: "0"   # 预检用: >0 时只取前 N 条卡片走提取,验机制不验全量
+  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
+  MAX_EPOCH: "6"        # 已知 409 条数据 epoch_1 即最佳,6 个足够含冗余
+  COSY_COMMIT: 074ca6d  # 与 thursday-win 相同 commit
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 由发射脚本 --env 注入,不落盘
+
+setup: |
+  set -euo pipefail
+  cd ~
+  # runtime 镜像无 git 也无编译器;pyworld(sdist,C++ 扩展)需要 g++
+  (command -v git && command -v g++) >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq git g++)
+  pip install -q awscli huggingface_hub
+  if [ ! -d CosyVoice ]; then
+    git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git
+  fi
+  cd CosyVoice
+  git checkout "$COSY_COMMIT" && git submodule update --init --recursive
+  # 护栏: requirements 不许动 torch 系(镜像已带 2.7.1+cu128,降级=前功尽弃)
+  # 老式 sdist(conformer 等)的 setup.py 还 import pkg_resources;setuptools>=81 删了它。
+  # PIP_CONSTRAINT 对 pip 的隔离构建环境同样生效,是唯一能钉住构建端 setuptools 的姿势。
+  printf 'setuptools<81\n' > /tmp/pip-constraints.txt
+  export PIP_CONSTRAINT=/tmp/pip-constraints.txt
+  # 大 wheel(onnxruntime-gpu 200MB, Azure 源)易断流:重试+断点续传+放宽超时
+  export PIP_RETRIES=5 PIP_RESUME_RETRIES=5 PIP_DEFAULT_TIMEOUT=60
+  # deepspeed 也在 requirements 里且装包时探测 CUDA_HOME(runtime 镜像必炸),一并滤掉
+  grep -viE "^(torch|torchaudio|torchvision|deepspeed)\b" requirements.txt > /tmp/req.txt
+  pip install -q -r /tmp/req.txt
+  # 雷6: 镜像 tag 是 cuda12.8 但 conda 内 torch 实为 cu126 构建,torchaudio 装上 cu128 后
+  # 版本打架(train.py import 即炸)。确定性修法:强制重装 cu128 配对全家桶。
+  pip install -q --force-reinstall torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+  # 坑1+5: train.py 顶层 import deepspeed;而 runtime 镜像无 CUDA 工具链,
+  # deepspeed 的 pip 安装在 egg_info 阶段就探测 CUDA_HOME 直接炸。
+  # 先试关掉 op 预编译真装;不行就写桩模块(torch_ddp 路径只需这几个符号)。
+  python - <<'PYSTUB'
+  import os, site
+  sp = site.getsitepackages()[0]
+  base = os.path.join(sp, 'deepspeed')
+  os.makedirs(os.path.join(base, 'runtime', 'zero'), exist_ok=True)
+  open(os.path.join(base, '__init__.py'), 'w').write(
+      "# torch_ddp-only stub: CosyVoice imports deepspeed unconditionally.\n"
+      "def add_config_arguments(parser):\n"
+      "    # 真 deepspeed 会注册这两个参数;train.py 的调用带 --deepspeed_config\n"
+      "    parser.add_argument('--deepspeed', action='store_true')\n"
+      "    parser.add_argument('--deepspeed_config', type=str, default=None)\n"
+      "    return parser\n"
+      "def init_distributed(*a, **k):\n    raise RuntimeError('deepspeed stub: use torch_ddp')\n"
+      "def initialize(*a, **k):\n    raise RuntimeError('deepspeed stub: use torch_ddp')\n")
+  open(os.path.join(base, 'runtime', '__init__.py'), 'w').write('')
+  open(os.path.join(base, 'runtime', 'zero', '__init__.py'), 'w').write('')
+  open(os.path.join(base, 'runtime', 'zero', 'stage_1_and_2.py'), 'w').write(
+      "def estimate_zero2_model_states_mem_needs_all_live(*a, **k):\n    return None\n")
+  print('deepspeed stubbed (torch_ddp only)')
+  PYSTUB
+  python - <<'PY'
+  from huggingface_hub import snapshot_download
+  snapshot_download('FunAudioLLM/CosyVoice2-0.5B', local_dir='pretrained_models/CosyVoice2-0.5B')
+  print('model ready')
+  PY
+  # 坑3: torch>=2.7 删了 ProcessGroup.options -> 单卡跳过 join barrier
+  python - <<'PY'
+  F='cosyvoice/utils/train_utils.py'
+  src=open(F).read()
+  if 'WORLD_SIZE_SINGLE_GPU_SKIP' not in src:
+    src=src.replace(
+        'def cosyvoice_join(group_join, info_dict):',
+        'def cosyvoice_join(group_join, info_dict):\n'
+        '    # WORLD_SIZE_SINGLE_GPU_SKIP: torch>=2.7 removed ProcessGroup.options;\n'
+        '    # single-GPU training never needs the uneven-data join barrier.\n'
+        '    if int(os.environ.get("WORLD_SIZE", "1")) == 1:\n'
+        '        return False\n')
+    open(F,'w').write(src); print('join patched')
+  else: print('join already patched')
+  PY
+  # 坑4: llm.pt 混 fp32/bf16, GradScaler 不支持 bf16 -> 整模型 fp32(不用 --use_amp)
+  python - <<'PY'
+  import re
+  F='cosyvoice/bin/train.py'
+  src=open(F).read()
+  if 'FORCE_FP32_SINGLE_GPU' not in src:
+    m=re.search(r'\n(\s*)(model = wrap_cuda_model\(args, model\))', src)
+    assert m, 'anchor not found'
+    src=src.replace(m.group(0),
+        '\n'+m.group(1)+'# FORCE_FP32_SINGLE_GPU: mixed fp32/bf16 checkpoint breaks without amp\n'
+        +m.group(1)+'model = model.float()'+m.group(0), 1)
+    open(F,'w').write(src); print('fp32 patched')
+  else: print('fp32 already patched')
+  PY
+  # 数据 A: 483 句语料(已含 parquet,旧 task 路径)
+  mkdir -p ~/teochew-sft && cd ~/teochew-sft
+  aws s3 cp "s3://gpu-burst-jobs/$OLD_TASK_ID/input/teochew-sft-corpus.tar.gz" . --endpoint-url "$R2_ENDPOINT"
+  tar xzf teochew-sft-corpus.tar.gz
+  # 数据 B: 1477 卡片词级语料(kaldi 目录+clips,提取在云上做)
+  mkdir -p ~/teochew-sft/cards && cd ~/teochew-sft/cards
+  aws s3 cp "s3://gpu-burst-jobs/$TASK_ID/input/teochew-cards-corpus.tar.gz" . --endpoint-url "$R2_ENDPOINT"
+  tar xzf teochew-cards-corpus.tar.gz
+  if [ "$CARDS_LIMIT" != "0" ]; then
+    for x in train dev; do
+      for f in wav.scp text utt2spk; do
+        head -n "$CARDS_LIMIT" data/$x/$f > data/$x/$f.tmp && mv data/$x/$f.tmp data/$x/$f
+      done
+      awk 'NR==1{printf "%s", $1; for(i=2;i<=NF;i++) printf " %s", $i; print ""}' data/$x/spk2utt > /dev/null
+      cut -d" " -f1 data/$x/utt2spk | tr "\n" " " | sed "s/^/tccard /; s/ $//" > data/$x/spk2utt.tmp
+      printf "\n" >> data/$x/spk2utt.tmp && mv data/$x/spk2utt.tmp data/$x/spk2utt
+    done
+  fi
+  # 卡片语料提取: campplus embedding -> speech token -> parquet(recipe stage 1-3)
+  C=$HOME/CosyVoice
+  P=$C/pretrained_models/CosyVoice2-0.5B
+  export PYTHONPATH="${PYTHONPATH:-}"
+  cd $C/examples/libritts/cosyvoice2 && . ./path.sh
+  for x in train dev; do
+    D=$HOME/teochew-sft/cards/data/$x
+    python $C/tools/extract_embedding.py --dir $D --onnx_path $P/campplus.onnx
+    python $C/tools/extract_speech_token.py --dir $D --onnx_path $P/speech_tokenizer_v2.onnx
+    mkdir -p $D/parquet
+    python $C/tools/make_parquet_list.py --num_utts_per_parquet 1000 --num_processes 4 \
+      --src_dir $D --des_dir $D/parquet
+  done
+  # 合并双语料 data lists
+  cd ~/teochew-sft
+  ls $HOME/teochew-sft/data/train/parquet/parquet_*.tar $HOME/teochew-sft/cards/data/train/parquet/parquet_*.tar > data/train.data.list
+  ls $HOME/teochew-sft/data/dev/parquet/parquet_*.tar $HOME/teochew-sft/cards/data/dev/parquet/parquet_*.tar > data/dev.data.list
+  wc -l data/train.data.list data/dev.data.list
+
+run: |
+  set -euo pipefail
+  W=$HOME/teochew-sft
+  C=$HOME/CosyVoice
+  E=$C/examples/libritts/cosyvoice2
+  P=$C/pretrained_models/CosyVoice2-0.5B
+  sed -i -E "s/max_epoch: [0-9]+/max_epoch: $MAX_EPOCH/" $E/conf/cosyvoice2.yaml
+  grep max_epoch $E/conf/cosyvoice2.yaml
+  # path.sh 里 export PYTHONPATH=...:$PYTHONPATH,在 set -u 下未定义即炸
+  export PYTHONPATH="${PYTHONPATH:-}"
+  cd $E && . ./path.sh
+  export CUDA_VISIBLE_DEVICES=0
+  set +e
+  torchrun --nnodes=1 --nproc_per_node=1 \
+    --rdzv_id=1986 --rdzv_backend=c10d --rdzv_endpoint=localhost:12355 \
+    $C/cosyvoice/bin/train.py \
+    --train_engine torch_ddp \
+    --config $E/conf/cosyvoice2.yaml \
+    --train_data $W/data/train.data.list \
+    --cv_data $W/data/dev.data.list \
+    --qwen_pretrain_path $P/CosyVoice-BlankEN \
+    --onnx_path $P \
+    --model llm \
+    --checkpoint $P/llm.pt \
+    --model_dir $W/exp/llm \
+    --tensorboard_dir $W/tensorboard/llm \
+    --ddp.dist_backend nccl \
+    --num_workers 2 --prefetch 100 --pin_memory \
+    --deepspeed_config $E/conf/ds_stage2.json \
+    --deepspeed.save_states model+optimizer 2>&1 | tee $W/train.log
+  rc=$?
+  set -e
+  # 无论成败都回传产物+日志,便于账后验尸
+  aws s3 cp $W/train.log "s3://gpu-burst-jobs/$TASK_ID/output/train.log" --endpoint-url "$R2_ENDPOINT" || true
+  if ls $W/exp/llm/epoch_*_whole.pt >/dev/null 2>&1; then
+    aws s3 cp $W/exp/llm "s3://gpu-burst-jobs/$TASK_ID/output/exp-llm/" --recursive --endpoint-url "$R2_ENDPOINT"
+  fi
+  echo "=== CV summary ==="
+  grep -aoE "Epoch [0-9]+ Step [0-9]+ CV info.*" $W/train.log | tail -10 || true
+  echo "TEOCHEW_SFT_RC=$rc"
+  exit $rc

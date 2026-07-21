@@ -126,6 +126,8 @@ setup: |
     done
   fi
   # 卡片语料提取: campplus embedding -> speech token -> parquet(recipe stage 1-3)
+  # 预检备注: 此链在 Mac qemu 仿真下 make_parquet_list 必段错误(pyarrow SIMD),
+  # 属仿真极限非 bug;embedding/token 两步已仿真验证,parquet 步在 thursday-win 原生验证过。
   C=$HOME/CosyVoice
   P=$C/pretrained_models/CosyVoice2-0.5B
   export PYTHONPATH="${PYTHONPATH:-}"

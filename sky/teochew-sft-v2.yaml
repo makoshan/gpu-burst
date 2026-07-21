@@ -110,8 +110,10 @@ setup: |
   aws s3 cp "s3://gpu-burst-jobs/$OLD_TASK_ID/input/teochew-sft-corpus.tar.gz" . --endpoint-url "$R2_ENDPOINT"
   tar xzf teochew-sft-corpus.tar.gz
   # 数据 B: 1477 卡片词级语料(kaldi 目录+clips,提取在云上做)
+  # Mac 侧网络掐大上传,tarball 以 5MB 分片存放,拉齐后拼接(字节级校验过)
   mkdir -p ~/teochew-sft/cards && cd ~/teochew-sft/cards
-  aws s3 cp "s3://gpu-burst-jobs/$TASK_ID/input/teochew-cards-corpus.tar.gz" . --endpoint-url "$R2_ENDPOINT"
+  aws s3 cp "s3://gpu-burst-jobs/$TASK_ID/input/parts/" . --recursive --endpoint-url "$R2_ENDPOINT"
+  cat cards-part-* > teochew-cards-corpus.tar.gz
   tar xzf teochew-cards-corpus.tar.gz
   if [ "$CARDS_LIMIT" != "0" ]; then
     for x in train dev; do

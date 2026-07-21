@@ -135,7 +135,7 @@ setup: |
     python $C/tools/extract_embedding.py --dir $D --onnx_path $P/campplus.onnx
     python $C/tools/extract_speech_token.py --dir $D --onnx_path $P/speech_tokenizer_v2.onnx
     mkdir -p $D/parquet
-    python $C/tools/make_parquet_list.py --num_utts_per_parquet 1000 --num_processes 4 \
+    python $C/tools/make_parquet_list.py --num_utts_per_parquet 1000 --num_processes 1 \
       --src_dir $D --des_dir $D/parquet
   done
   # 合并双语料 data lists

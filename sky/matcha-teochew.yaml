@@ -1,0 +1,82 @@
+# Matcha-TTS 潮汕单说话人训练 — gpu-burst 第二类训练负载(CosyVoice SFT 之外)。
+# 管线已在 thursday-win 5070Ti 验证(2026-07-26, G34 65.7min/BigVGAN 对齐);
+# 本模板是云可复现版,兑现 docs/technical.md 的 s5cmd 并行 + R2 缓存(见 sky/lib/r2-common.sh)。
+#
+# 相对 teochew-sft-v2.yaml 的冷启动/传输优化:
+#   - 传输: 数据/产物走 s5cmd 并行(teochew-sft 用 aws s3 cp 单线程 + 5MB 分片 workaround)
+#   - 冷启动: BigVGAN vocoder 从 gpu-burst-cache 拉 + SHA 校验(不走 HF snapshot_download)
+#   - Matcha 是标准 pip 包,依赖远比 CosyVoice 轻(无 deepspeed/pyworld/onnx 补丁地狱)
+#
+# ⚠ 数据准备(发射前一次性,见 launch-matcha-teochew.sh --prep):
+#   gpu-burst-jobs/$TASK_ID/input/{wavs22k/,filelists/}  ← G34 切片 + PUA filelist
+#   gpu-burst-jobs/$TASK_ID/input/teochew-g2p.tgz         ← PKO G2P(dp+词库)
+#   gpu-burst-cache/bigvgan_teochew/...                   ← vocoder(一次,跨任务复用)
+# ⚠ live 未验证: 数据未推 R2 + 付费闭环未通(见 GOAL.md);当前只保证 dry-run + 结构。
+
+name: matcha-teochew
+
+resources:
+  cloud: vast
+  accelerators: RTX4090:1     # 单说话人小数据,thursday-win 实测 GPU util~32%,4090 足够(不需 A100)
+  disk_size: 40
+  use_spot: false
+  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+
+envs:
+  TASK_ID: matcha-teochew-g34-20260726
+  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
+  EXPERIMENT: teochew_bigvgan     # citation 版; sandhi 版传 teochew_sandhi
+  MAX_EPOCH: "600"
+  N_VOCAB: "301"                  # = len(symbols)(citation 301 / sandhi 296),必须与 filelist 匹配
+  MEL_MEAN: "-4.578679"           # f_max=null 域实算(音频侧,与文本无关)
+  MEL_STD: "2.125941"
+  BIGVGAN_SHA: 315b454136a5a25a0e14721c2c10146fc0f7499d96a1e74db7a088665565ca84
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 由发射脚本 --env 注入,不落盘
+
+file_mounts:
+  /tmp/r2-common.sh: sky/lib/r2-common.sh
+  /tmp/setup_matcha_cloud.py: sky/lib/setup_matcha_cloud.py
+
+setup: |
+  set -euo pipefail
+  source /tmp/r2-common.sh
+  ensure_s5cmd
+  command -v git >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq git)
+
+  # --- Matcha 源码 + 依赖(标准 pip,无 CosyVoice 那套补丁) ---
+  [ -d ~/matcha-src ] || git clone --depth 1 https://github.com/shivammehta25/Matcha-TTS.git ~/matcha-src
+  pip install -q -e ~/matcha-src soundfile
+
+  # --- 数据: G34 wav(22k)+ PUA filelist,s5cmd 并行拉 ---
+  mkdir -p ~/data/wavs22k ~/data/filelists
+  r2_pull "s3://gpu-burst-jobs/$TASK_ID/input/wavs22k/*"   ~/data/wavs22k/
+  r2_pull "s3://gpu-burst-jobs/$TASK_ID/input/filelists/*" ~/data/filelists/
+
+  # --- BigVGAN vocoder: cache 桶拉 + SHA 校验(不走 HF) ---
+  mkdir -p ~/bigvgan/exp/bigvgan_teochew_22khz ~/bigvgan/bigvgan_standalone
+  r2_pull "s3://gpu-burst-cache/bigvgan_teochew/bigvgan_standalone/*" ~/bigvgan/bigvgan_standalone/
+  r2_pull "s3://gpu-burst-cache/bigvgan_teochew/exp/bigvgan_teochew_22khz/config.json" ~/bigvgan/exp/bigvgan_teochew_22khz/
+  r2_pull_verified \
+    "s3://gpu-burst-cache/bigvgan_teochew/exp/bigvgan_teochew_22khz/g_05330000" \
+    ~/bigvgan/exp/bigvgan_teochew_22khz/g_05330000 "$BIGVGAN_SHA"
+
+  # --- symbols.py(list-based)+ data/experiment config(f_max=null 对齐)+ best-val ---
+  # 逻辑在独立 py(可本地单测),env 注入 MEL/N_VOCAB/EXPERIMENT,避免 yaml block-scalar 缩进坑
+  MATCHA_SRC=~/matcha-src FILELISTS=~/data/filelists python3 /tmp/setup_matcha_cloud.py
+
+run: |
+  set -euo pipefail
+  source /tmp/r2-common.sh
+  cd ~/matcha-src
+  # rich 进度条在非 TTY 崩(thursday-win 实测);去掉 callback
+  sed -i '/rich_progress_bar/d' configs/callbacks/default.yaml || true
+  set +e
+  python matcha/train.py experiment=$EXPERIMENT trainer.max_epochs=$MAX_EPOCH 2>&1 | tee ~/train.log
+  rc=$?
+  set -e
+  # 回传: 日志 + checkpoints(s5cmd 并行,teochew-sft 的 aws s3 cp 单线程在此换掉)
+  r2_push ~/train.log "s3://gpu-burst-jobs/$TASK_ID/output/train.log" || true
+  CKDIR=$(ls -dt logs/train/*/runs/*/checkpoints 2>/dev/null | head -1)
+  [ -n "$CKDIR" ] && r2_push "$CKDIR/*" "s3://gpu-burst-jobs/$TASK_ID/output/checkpoints/" || true
+  echo "MATCHA_TEOCHEW_RC=$rc"
+  exit $rc

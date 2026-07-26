@@ -151,3 +151,28 @@ gpu-burst/
 - 本地 5070 Ti（16GB）只做小样本验证 / dry-run / 短片段测试，不做云任务失败后的完整重跑
 - 每个任务跑完记录真实单价到本 README，估算逐步换成实测
 - 单价实测记录：（暂无）
+
+## 训练负载与冷启动/传输优化
+
+`sky/` 下的训练模板（绕过 CLI，SkyPilot 直发）：
+
+| 模板 | 负载 | 状态 |
+|---|---|---|
+| `teochew-sft-v2.yaml` | CosyVoice2-0.5B llm SFT | 云端真跑过（2026-07 v2，R2 有产物） |
+| `matcha-teochew.yaml` | Matcha-TTS 潮汕单说话人 | 结构+dry-run 就绪；**live 未验证**（数据未推 R2） |
+
+`sky/lib/r2-common.sh` 兑现 `docs/technical.md` 已定但 `teochew-sft` 未落实的两项优化，
+新模板 source 它（`file_mounts` 上传到云机）：
+
+- **传输**：`r2_pull`/`r2_push` 走 **s5cmd 并行**，替 `teochew-sft` 的 `aws s3 cp` 单线程
+  + 5MB 分片 workaround（commit bc02204 的痛点根治）。
+- **冷启动**：`r2_pull_verified`（模型从 `gpu-burst-cache` 拉 + SHA-256 校验，替
+  `snapshot_download` 现拉 HF）；`r2_cache_or_build`（依赖缓存命中即拉解、未命中现装再推，
+  渐进式，首次不慢于现状）。
+
+⚠ 实测收益（s5cmd 并行 vs aws s3 cp 的墙钟、缓存命中省的冷启动分钟）需首次真云跑后填入
+上面「单价实测记录」——当前只保证 `bash -n` + yaml 可解析 + `setup_matcha_cloud.py` 单测通过。
+
+数据准备（发射前一次性，尚未做）：
+- `gpu-burst-jobs/<TASK_ID>/input/{wavs22k/,filelists/}` ← G34 切片 + PUA filelist
+- `gpu-burst-cache/bigvgan_teochew/…` ← BigVGAN vocoder（一次，跨任务复用；SHA 见模板 env）

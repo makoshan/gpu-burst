@@ -1,0 +1,53 @@
+# 阿粤 720P 视频重拍管线（Wan I2V 底片 + InfiniteTalk V2V 对口型）
+#
+# 路线（2026-08-01 定案）：权重 R2-first、HF 兜底、首跑 tee 回 R2；
+# 本地（thursday-win/Clash）零上传。发射前必须过 docker 预检
+# （见 gpu-burst-infra 方法论：setup 块本地同镜像逐字跑绿再发射）。
+#
+# ⚠️ 未验证项（发射前解决）：
+#  1. InfiniteTalk 权重 HF 路径待确认（本地文件名 Wan2_1-InfiniTetalk-Single_fp16.safetensors，
+#     注意 "InfiniTetalk" 拼写；不在 Kijai/WanVideo_comfy 根目录，可能在子目录或别的仓库）
+#  2. lightx2v 720P I2V 蒸馏 LoRA 是否存在——不存在则两选一：
+#     a) 用 480p rank64 LoRA 跑 720P（本地 A/B 即此组合，画质可用但非原生）
+#     b) 不挂蒸馏 LoRA 走 20 步原生采样（慢 5 倍，A/B 后定）
+#  3. ComfyUI + WanVideoWrapper + VideoHelperSuite 的 commit 钉版（照抄 thursday-win 现网版本）
+#
+# 用法（全部需用户终端亲跑付费命令）：
+#   sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 10 --down -y
+
+resources:
+  cloud: vast
+  accelerators: RTX4090:1     # 24GB：720P fp8 主模型 17GB + 激活，480P 实测 15.9G 顶 16G 卡
+  disk_size: 80               # 权重 ~30GB + ComfyUI + 输出
+
+envs:
+  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
+  R2_CACHE: gpu-burst-cache
+  R2_JOBS: gpu-burst-jobs
+
+file_mounts:
+  # 任务包：job JSON（720x1280 版工作流）+ 源音频 + 母版图，由发射脚本打包
+  /job: ./tasks/ayue-720p-jobpack
+
+setup: |
+  set -euo pipefail
+  # --- 钉版安装（TODO: 预检后钉 commit）---
+  git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI
+  git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper
+  git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite
+  git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
+  pip install -r /root/ComfyUI/requirements.txt
+  pip install -r /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt
+  pip install accelerate opencv-python-headless ftfy imageio-ffmpeg s5cmd huggingface_hub[hf_transfer]
+  # --- 权重：R2-first，HF 兜底并 tee 回 R2 ---
+  bash /job/fetch_weights.sh   # 逐文件: s5cmd cp r2://cache || hf download && s5cmd cp -> r2
+
+run: |
+  set -euo pipefail
+  export PYTHONPATH="${PYTHONPATH:-}"
+  cd /root/ComfyUI && python main.py --listen 127.0.0.1 --port 8188 &
+  python /job/wait_comfy_ready.py
+  # 两阶段：底片(纯I2V) -> V2V 对口型；job JSON 由 /job/queue_all.py 按清单投递并轮询 history
+  python /job/queue_all.py --stage sources && python /job/queue_all.py --stage v2v
+  # 成片 + 日志回传
+  s5cmd --endpoint-url $R2_ENDPOINT cp "/root/ComfyUI/output/*" "s3://$R2_JOBS/ayue-720p-$(date +%Y%m%d)/output/"

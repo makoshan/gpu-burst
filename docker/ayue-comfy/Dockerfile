@@ -10,7 +10,12 @@
 #   docker build -t ayue-comfy:local docker/ayue-comfy
 #   docker run --rm --gpus all ayue-comfy:local python3 -c "import torch;print(torch.cuda.is_available())"
 
-FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
+# Ubuntu 24.04 原生 Python 3.12，与 thursday-win 生产环境（3.12.13）一致。
+# 不用 pytorch/* 官方镜像：它们的 Python 是 3.11，装不上黄金栈
+# （numpy 2.5.1 等要求 >=3.12，实测直接 No matching distribution）。
+# CUDA 运行库全部由 pip 的 nvidia-* 包提供（黄金 freeze 里有 15 个），
+# 基础镜像不需要自带 CUDA；GPU 可见性由 nvidia container runtime 提供。
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -20,8 +25,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # 系统依赖：git 拉节点、ffmpeg 供 VideoHelperSuite、curl 供健康检查
 RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends \
+      python3 python3-pip python3-venv \
       git curl ca-certificates ffmpeg libgl1 libglib2.0-0 \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 --version
 
 # ---- ComfyUI 与节点：commit 钉死，与 thursday-win 生产环境一致 ----
 ARG COMFY_COMMIT=b3581971
@@ -37,10 +44,17 @@ RUN git clone --filter=blob:none https://github.com/comfyanonymous/ComfyUI /root
 
 # ---- 黄金依赖集：thursday-win 生产环境（每天在跑这条管线）的 pip freeze ----
 # 不用 ComfyUI 滚动的 requirements.txt。torch 系走 cu130 官方 index。
+# 用独立 venv，不碰系统 Python：debian 装的包（wheel/PyJWT 等）没有 RECORD
+# 文件，pip 想升级它们时会 "Cannot uninstall X, RECORD file not found" 直接
+# 失败——加 --break-system-packages 也救不了（2026-08-01 在 RunPod 和这里
+# 各踩一次）。venv 里是干净的 pip 世界，黄金 freeze 可以精确重放。
+ENV VIRTUAL_ENV=/opt/ayue PATH=/opt/ayue/bin:$PATH
+RUN python3 -m venv $VIRTUAL_ENV && $VIRTUAL_ENV/bin/pip install --no-cache-dir -U pip setuptools wheel
+
 COPY golden-freeze.txt /tmp/golden-freeze.txt
-RUN python3 -m pip install --no-cache-dir -r /tmp/golden-freeze.txt \
+RUN pip install --no-cache-dir -r /tmp/golden-freeze.txt \
       --extra-index-url https://download.pytorch.org/whl/cu130 \
- && python3 -m pip install --no-cache-dir s5cmd "huggingface_hub[hf_transfer]" \
+ && pip install --no-cache-dir s5cmd "huggingface_hub[hf_transfer]" \
  && rm -f /tmp/golden-freeze.txt
 
 # ---- 构建期自检：装完就验，别等到云上才发现节点没注册 ----

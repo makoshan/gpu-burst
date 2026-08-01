@@ -46,7 +46,7 @@ run: |
   set -euo pipefail
   export PYTHONPATH="${PYTHONPATH:-}"
   cd /root/ComfyUI && python main.py --listen 127.0.0.1 --port 8188 &
-  python /job/wait_comfy_ready.py
+  cp /job/inputs/* /root/ComfyUI/input/ && python /job/wait_comfy_ready.py
   # 两阶段：底片(纯I2V) -> V2V 对口型；job JSON 由 /job/queue_all.py 按清单投递并轮询 history
   python /job/queue_all.py --stage sources && python /job/queue_all.py --stage v2v
   # 成片 + 日志回传

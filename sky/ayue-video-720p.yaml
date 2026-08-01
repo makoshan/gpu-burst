@@ -34,25 +34,29 @@ file_mounts:
 
 setup: |
   set -euo pipefail
-  # --- 钉版安装（TODO: 预检后钉 commit）---
+  # ---- 驱动门禁：黄金栈是 torch 2.13+cu130，宿主机驱动必须 >= 580（CUDA 13）----
+  # 2026-08-01 整批失败的真根因：租到 CUDA 12.8 驱动的宿主机。不达标就立刻失败，
+  # 让发射方 down 掉换机，别浪费后续 setup 时间。
+  DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | cut -d. -f1)
+  [ "$DRV" -ge 580 ] || { echo "DRIVER-TOO-OLD: $DRV < 580 (need CUDA 13)"; exit 47; }
+  echo "driver ok: $DRV"
+  PIP=/root/miniconda3/bin/pip; PY=/root/miniconda3/bin/python
+  $PY --version
   git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
   git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
   git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite && git -C /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite checkout 4ee72c0
   git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
-  # 先钉 cu128 的 torch：Vast 社区宿主机驱动版本参差，ComfyUI 的 requirements
-  # 会拉需要 CUDA 13 的 torch 2.13，遇到只支持 CUDA 12.8 的宿主机直接
-  # RuntimeError: NVIDIA driver too old（2026-08-01 实测踩到）。
-  # 先装 cu128 版，requirements.txt 里的裸 `torch` 就会视为已满足。
-  /root/miniconda3/bin/pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
-  /root/miniconda3/bin/pip install -r /root/ComfyUI/requirements.txt
-  pip install -r /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt
-  pip install accelerate opencv-python-headless ftfy imageio-ffmpeg s5cmd huggingface_hub[hf_transfer]
-  # --- 权重：R2-first，HF 兜底并 tee 回 R2 ---
-  bash /job/fetch_weights.sh   # 逐文件: s5cmd cp r2://cache || hf download && s5cmd cp -> r2
+  # ---- 黄金 freeze 精确重放：thursday-win 生产环境（每天在跑这条管线）的 pip freeze，
+  #      不是滚动 requirements。cu130 轮子从 pytorch 官方 index 拉。----
+  $PIP install -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
+  $PIP install s5cmd huggingface_hub[hf_transfer]
+  # 权重：R2-first（已全量缓存），HF 兜底
+  PATH=/root/miniconda3/bin:$PATH bash /job/fetch_weights.sh
 
 run: |
   set -euo pipefail
   export PYTHONPATH="${PYTHONPATH:-}"
+  export PATH=/root/miniconda3/bin:$PATH
   cd /root/ComfyUI && python main.py --listen 127.0.0.1 --port 8188 &
   cp /job/inputs/* /root/ComfyUI/input/ && python /job/wait_comfy_ready.py
   # 两阶段：底片(纯I2V) -> V2V 对口型；job JSON 由 /job/queue_all.py 按清单投递并轮询 history

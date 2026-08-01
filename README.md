@@ -176,3 +176,14 @@ gpu-burst/
 数据准备（发射前一次性，尚未做）：
 - `gpu-burst-jobs/<TASK_ID>/input/{wavs22k/,filelists/}` ← G34 切片 + PUA filelist
 - `gpu-burst-cache/bigvgan_teochew/…` ← BigVGAN vocoder（一次，跨任务复用；SHA 见模板 env）
+
+### 2026-08-01 RunPod 接入备忘
+
+- runpod SDK 装进 skypilot 的 uv tool venv 时，typer 会把 click 拖到 8.4，
+  新版对 `flag_value + default=False` 的语义变化使 `sky launch` 的
+  backend_name 变成 `False`，报「False backend is not supported」。
+  **修复：`uv pip install -p ~/.local/share/uv/tools/skypilot click==8.1.8`**；
+  runpod SDK import 不受影响。
+- `~/.runpod/config.toml` 必须有 `[default]` profile 头，裸 `api_key = ...` 不认。
+- 发射双通道：`AYUE_YAML=sky/ayue-video-720p-runpod.yaml` 切 RunPod，
+  默认 Vast。驱动门禁（>=580）两边都保留。

@@ -9,6 +9,14 @@ def post(path, data=None):
     return json.load(urllib.request.urlopen(req, timeout=30))
 
 stage = sys.argv[sys.argv.index("--stage")+1]
+# 上一阶段的成片落在 output/，但下一阶段的 VHS_LoadVideo 只从 input/ 读——
+# 阶段之间必须显式搬运，否则 V2V 报 "Invalid video file"（2026-08-01 首跑坑）。
+import shutil, os
+if stage != "sources":
+    for f in glob.glob("/root/ComfyUI/output/*.mp4"):
+        dst = "/root/ComfyUI/input/" + os.path.basename(f)
+        if not os.path.exists(dst):
+            shutil.copy(f, dst); print("staged->input", os.path.basename(f), flush=True)
 ids = []
 for f in sorted(glob.glob(f"/job/jobs/{stage}_*.json")):
     r = post("/prompt", json.load(open(f)))

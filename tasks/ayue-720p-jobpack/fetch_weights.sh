@@ -5,8 +5,9 @@ M=/root/ComfyUI/models
 declare -A W=(
   ["diffusion_models/Wan2_1-I2V-14B-720P_fp8_e4m3fn.safetensors"]="Kijai/WanVideo_comfy Wan2_1-I2V-14B-720P_fp8_e4m3fn.safetensors"
   ["diffusion_models/Wan2_1-InfiniTetalk-Single_fp16.safetensors"]="Kijai/WanVideo_comfy InfiniteTalk/Wan2_1-InfiniTetalk-Single_fp16.safetensors"
-  ["text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"]="Kijai/WanVideo_comfy umt5-xxl-enc-fp8_e4m3fn.safetensors"
+  ["text_encoders/umt5-xxl-enc-fp8_e4m3fn.safetensors"]="Kijai/WanVideo_comfy umt5-xxl-enc-fp8_e4m3fn.safetensors"
   ["vae/Wan2_1_VAE_bf16.safetensors"]="Kijai/WanVideo_comfy Wan2_1_VAE_bf16.safetensors"
+  ["clip_vision/clip_vision_h.safetensors"]="Comfy-Org/Wan_2.1_ComfyUI_repackaged split_files/clip_vision/clip_vision_h.safetensors"
   ["loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors"]="Kijai/WanVideo_comfy Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors"
 )
 export HF_HUB_ENABLE_HF_TRANSFER=1

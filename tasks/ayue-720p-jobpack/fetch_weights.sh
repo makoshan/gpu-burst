@@ -18,7 +18,7 @@ for dst in "${!W[@]}"; do
   else
     hf download "$repo" "$file" --local-dir /tmp/hf
     mv "/tmp/hf/$file" "$M/$dst"
-    s5cmd --endpoint-url "$R2_ENDPOINT" cp "$M/$dst" "s3://$R2_CACHE/ayue-video/$dst" && echo "teed $dst"
+    s5cmd --endpoint-url "$R2_ENDPOINT" cp "$M/$dst" "s3://$R2_CACHE/ayue-video/$dst" && echo "teed $dst" || echo "tee-failed $dst (non-fatal)"
   fi
 done
 hf download TencentGameMate/chinese-wav2vec2-base --local-dir "$M/wav2vec/chinese-wav2vec2-base"

@@ -39,6 +39,11 @@ setup: |
   git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
   git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite && git -C /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite checkout 4ee72c0
   git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
+  # 先钉 cu128 的 torch：Vast 社区宿主机驱动版本参差，ComfyUI 的 requirements
+  # 会拉需要 CUDA 13 的 torch 2.13，遇到只支持 CUDA 12.8 的宿主机直接
+  # RuntimeError: NVIDIA driver too old（2026-08-01 实测踩到）。
+  # 先装 cu128 版，requirements.txt 里的裸 `torch` 就会视为已满足。
+  pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
   pip install -r /root/ComfyUI/requirements.txt
   pip install -r /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt
   pip install accelerate opencv-python-headless ftfy imageio-ffmpeg s5cmd huggingface_hub[hf_transfer]

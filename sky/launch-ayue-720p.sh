@@ -3,7 +3,7 @@
 #   GPU_BURST_LIVE=1 ./sky/launch-ayue-720p.sh --confirm-paid
 set -euo pipefail
 cd "$(dirname "$0")/.."
-CMD=(sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 10 --down -y)
+CMD=(sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 15 --down -y)
 if [[ "${1:-}" == "--confirm-paid" && "${GPU_BURST_LIVE:-}" == "1" ]]; then
   uv run gpu-burst doctor >/dev/null || { echo "doctor not ready"; exit 1; }
   # R2 凭证注入：从本地 aws profile 读出，经 ssh 写到云机 ~/.aws/credentials

@@ -26,8 +26,11 @@ envs:
   R2_JOBS: gpu-burst-jobs
 
 file_mounts:
-  # 任务包：job JSON（720x1280 版工作流）+ 源音频 + 母版图，由发射脚本打包
+  # 任务包：job JSON（720x1280 版工作流）+ 源音频 + 母版图
   /job: ./tasks/ayue-720p-jobpack
+  # R2 凭证走 file_mounts，不要用「后台 launch + ssh 注入」——那个包装层会让
+  # sky launch 提前退出，--down 随即拆机（2026-08-01 整批首发就这么废了一次）。
+  /root/.aws/credentials: ~/.config/gpu-burst/r2-credentials
 
 setup: |
   set -euo pipefail

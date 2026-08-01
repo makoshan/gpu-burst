@@ -43,8 +43,8 @@ setup: |
   # 会拉需要 CUDA 13 的 torch 2.13，遇到只支持 CUDA 12.8 的宿主机直接
   # RuntimeError: NVIDIA driver too old（2026-08-01 实测踩到）。
   # 先装 cu128 版，requirements.txt 里的裸 `torch` 就会视为已满足。
-  pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
-  pip install -r /root/ComfyUI/requirements.txt
+  /root/miniconda3/bin/pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+  /root/miniconda3/bin/pip install -r /root/ComfyUI/requirements.txt
   pip install -r /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt
   pip install accelerate opencv-python-headless ftfy imageio-ffmpeg s5cmd huggingface_hub[hf_transfer]
   # --- 权重：R2-first，HF 兜底并 tee 回 R2 ---

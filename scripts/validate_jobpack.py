@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""作业包发射前全量校验——把「发射后才炸」的问题全部在本地查出来。
+
+2026-08-01 的教训：七次发射里有四次死在本地就能查出的错误上
+（模型名与权重清单不符、阶段依赖的文件名对不上、音频缺失…），
+每次都要烧掉 15 分钟 setup + 计费机时才看得见。
+
+用法：
+    python3 scripts/validate_jobpack.py tasks/ayue-720p-jobpack [--strict-720p]
+
+退出码非 0 即禁止发射。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+# fetch_weights.sh 里声明的目标路径 → ComfyUI 里的文件名
+WEIGHT_RE = re.compile(r'\["([^"]+)"\]="([^"]+)"')
+LOADER_FIELDS = ("model", "model_name", "clip_name", "lora", "vae_name")
+MEDIA_FIELDS = ("audio", "video", "image")
+
+
+def load_declared_weights(pack: Path) -> dict[str, str]:
+    """从 fetch_weights.sh 解析出会被放进 models/ 的文件名。"""
+    sh = (pack / "fetch_weights.sh").read_text(encoding="utf-8")
+    out = {}
+    for dst, _src in WEIGHT_RE.findall(sh):
+        out[Path(dst).name] = dst
+    # wav2vec 是整目录下载，单独标记
+    if "chinese-wav2vec2-base" in sh:
+        out["chinese-wav2vec2-base"] = "wav2vec/chinese-wav2vec2-base"
+    return out
+
+
+def iter_nodes(job: dict):
+    prompt = job.get("prompt", job)
+    for nid, node in prompt.items():
+        if isinstance(node, dict) and isinstance(node.get("inputs"), dict):
+            yield nid, node
+
+
+def validate(pack: Path, strict_720p: bool) -> list[str]:
+    errors: list[str] = []
+    jobs_dir = pack / "jobs"
+    inputs_dir = pack / "inputs"
+    if not jobs_dir.is_dir():
+        return [f"缺少 {jobs_dir}"]
+
+    weights = load_declared_weights(pack)
+    job_files = sorted(jobs_dir.glob("*.json"))
+    if not job_files:
+        return [f"{jobs_dir} 里没有作业"]
+
+    produced: set[str] = set()          # 各阶段会产出的文件名（filename_prefix 推导）
+    stage_of: dict[str, str] = {}
+    consumed_media: list[tuple[str, str]] = []
+
+    # 第一遍：收集产出
+    for f in job_files:
+        stage = f.name.split("_", 1)[0]
+        stage_of[f.name] = stage
+        job = json.loads(f.read_text(encoding="utf-8"))
+        for _nid, node in iter_nodes(job):
+            pref = node["inputs"].get("filename_prefix")
+            if pref:
+                produced.add(f"{pref}_00001.mp4")
+
+    # 第二遍：逐项校验
+    for f in job_files:
+        job = json.loads(f.read_text(encoding="utf-8"))
+        tag = f.name
+        stage = stage_of[tag]
+        seen_loader = False
+
+        for nid, node in iter_nodes(job):
+            ins = node["inputs"]
+            ctype = node.get("class_type", "?")
+
+            # 1) 模型名必须在权重清单里
+            for field in LOADER_FIELDS:
+                val = ins.get(field)
+                if isinstance(val, str) and val.endswith(".safetensors"):
+                    seen_loader = True
+                    if Path(val).name not in weights:
+                        errors.append(
+                            f"[{tag}] 节点{nid} {ctype}.{field}='{val}' 不在 fetch_weights.sh 清单里"
+                        )
+
+            # 2) 分辨率
+            if strict_720p and "width" in ins and "height" in ins:
+                if (ins["width"], ins["height"]) != (720, 1280):
+                    errors.append(
+                        f"[{tag}] 节点{nid} {ctype} 分辨率 {ins['width']}x{ins['height']} != 720x1280"
+                    )
+
+            # 3) 媒体输入：音频/图片必须在 inputs/；视频要么在 inputs/ 要么由前序阶段产出
+            for field in MEDIA_FIELDS:
+                val = ins.get(field)
+                if not isinstance(val, str) or "/" in val or not val:
+                    continue
+                if not re.search(r"\.(wav|mp3|png|jpg|jpeg|mp4|webm)$", val, re.I):
+                    continue
+                consumed_media.append((tag, val))
+                on_disk = (inputs_dir / val).exists()
+                if val.lower().endswith((".mp4", ".webm")):
+                    if not on_disk and val not in produced:
+                        errors.append(
+                            f"[{tag}] 节点{nid} {ctype}.{field}='{val}' 既不在 inputs/ 也没有任何阶段产出它"
+                        )
+                elif not on_disk:
+                    errors.append(f"[{tag}] 节点{nid} {ctype}.{field}='{val}' 在 inputs/ 里不存在")
+
+            # 4) 帧数下限（InfiniteTalk 分段最小 33）
+            nf = ins.get("num_frames")
+            if isinstance(nf, int) and not (33 <= nf <= 201):
+                errors.append(f"[{tag}] 节点{nid} num_frames={nf} 超出 [33,201]")
+
+        if not seen_loader:
+            errors.append(f"[{tag}] 没有任何 .safetensors 加载节点，工作流可能损坏")
+
+        if not any(
+            node["inputs"].get("filename_prefix") for _n, node in iter_nodes(job)
+        ):
+            errors.append(f"[{tag}] 没有 filename_prefix，成片会覆盖默认名")
+
+    # 5) 输出前缀唯一性
+    seen_pref = defaultdict(list)
+    for f in job_files:
+        job = json.loads(f.read_text(encoding="utf-8"))
+        for _nid, node in iter_nodes(job):
+            p = node["inputs"].get("filename_prefix")
+            if p:
+                seen_pref[p].append(f.name)
+    for pref, owners in seen_pref.items():
+        if len(owners) > 1:
+            errors.append(f"filename_prefix '{pref}' 被多个作业共用：{owners}（成片互相覆盖）")
+
+    # 6) 未被任何作业使用的输入（提示浪费，不算错误）
+    if inputs_dir.is_dir():
+        used = {v for _t, v in consumed_media}
+        for p in sorted(inputs_dir.iterdir()):
+            if p.is_file() and p.name not in used and p.suffix.lower() in {".wav", ".mp3"}:
+                print(f"提示：inputs/{p.name} 没有被任何作业引用", file=sys.stderr)
+
+    return errors
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("pack", type=Path)
+    ap.add_argument("--strict-720p", action="store_true")
+    a = ap.parse_args()
+
+    errors = validate(a.pack, a.strict_720p)
+    jobs = len(list((a.pack / "jobs").glob("*.json")))
+    if errors:
+        print(f"✗ {a.pack.name}: {jobs} 个作业，发现 {len(errors)} 处问题：")
+        for e in errors:
+            print("  -", e)
+        return 1
+    print(f"✓ {a.pack.name}: {jobs} 个作业全部通过校验")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

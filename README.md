@@ -14,7 +14,7 @@
 
 ## 文档
 
-当前仓库处于**Phase 1 本地骨架已实现、云端付费闭环尚未实现**阶段。README 用于快速理解方向，详细契约以以下文档为准：
+当前仓库处于**Phase 1 本地骨架已实现、云端付费闭环尚未完成验证**阶段。Ayue 720P 已新增 RunPod 控制面，但正确的 19 支包仍因镜像 digest、权重锁和人工审批未齐而拒绝付费发射；详见 [Ayue RunPod 操作与门禁](docs/ayue-runpod.md)。README 用于快速理解方向，详细契约以以下文档为准：
 
 - [产品文档](docs/product.md)：用户、范围、MVP 验收门槛、指标和路线图
 - [技术文档](docs/technical.md)：架构、任务协议、状态机、数据隔离、成本和测试策略
@@ -36,7 +36,7 @@ CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 c
 gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run`。`hello-world --confirm-paid` 已具备完整生命周期：SkyPilot launch/finally down + Vast API 销毁复核（轮询 + 残留强制销毁升级）+ 账单关联（billing.json：余额差 / 实测时价 / 预期成本），有单测与 contract 测试覆盖；但端到端付费 SUCCEEDED 路径尚未在真云上走通（2026-07-20 验证跑因并发会话冲突被操作者中止，详见 GOAL.md），且清扫逻辑假设跑期间账户内无并发实例。song-cards 的自动化云端执行仍未实现。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
+已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run` / `configure-runpod` / `ayue-720p-plan` / `ayue-720p-launch`。RunPod 路径在渲染前先起 bootstrap Pod 并核验观测单价，渲染结束后用 RunPod API 复核销毁并在残留时升级 DELETE；真实付费闭环尚未执行。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
 
 本地验证：
 
@@ -47,6 +47,8 @@ uv run gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 uv run gpu-burst hello-world --dry-run
 uv run gpu-burst watchdog --dry-run
 ```
+
+Ayue 720P 的旧 Vast/30-job 入口已禁用。RunPod 免费预检通过 `sky/launch-ayue-720p-runpod.sh` 调用，并且必须显式给出正确 19 支包与不可变镜像 digest。
 
 云端目标行为：**比价租机 → 从 R2 拉权重/输入 → 跑任务 → 回传结果 → 销毁机器 → 记账**
 
@@ -64,10 +66,10 @@ Claude Skill 只做一层薄壳：自然语言 → CLI 参数。
 
 ## 技术选型（2026-07 调研定案）
 
-- **调度**：[SkyPilot](https://github.com/skypilot-org/skypilot) + Vast.ai 后端
-  - 最便宜（Vast 市场比价），跑完即毁，不锁平台
-  - Vast API key 放 `~/.config/vastai/vast_api_key`
-  - 版本固定：`uv` 建 Python 3.13 环境，装 `skypilot[vast]==0.12.3.post1`（本机默认 3.14 不支持；不用 0.13.0rc）
+- **调度**：[SkyPilot](https://github.com/skypilot-org/skypilot)；Ayue 720P 使用 RunPod Pods，既有训练模板暂保留 Vast 后端
+  - Provider 可切换，跑完即毁，不锁平台；Ayue 不再使用社区 Vast 现场安装环境
+  - Vast API key 放 `~/.config/vastai/vast_api_key`；RunPod key 由 MyKey 注入并落到权限 `0600` 的 `~/.runpod/config.toml`
+  - 版本固定：`uv` 建 Python 3.13 环境，目标为 `skypilot[vast,runpod]==0.12.3.post1`（本机默认 3.14 不支持；不用 0.13.0rc）；`sky check runpod` 当前已通过，但 19 支包自身的镜像/哈希/审批门仍关闭
   - 已知后端限制（Vast [官方文档](https://vast.ai/article/vast-ai-gpus-can-now-be-rentend-through-skypilot)）：不支持对象存储挂载（容器实例无 FUSE 特权）、不支持多机集群、端口须启动时配好
   - spot 抢占 + 断点续训砍训练成本：仅当训练脚本支持 resume-from-checkpoint 且走 `sky jobs launch` 时成立，实测前按 on-demand 价估算
   - 选机第一版只承诺 `datacenter_only` + 时价上限：launch 时源码不过滤 inet_down/可靠性（[创建逻辑](https://github.com/skypilot-org/skypilot/blob/v0.12.3.post1/sky/provision/vast/utils.py#L111-L132)），创建后校验实际 offer，不满足即销毁；要精确控网速/可靠性须绕过 SkyPilot 直调 Vast API 选机
@@ -84,7 +86,7 @@ Claude Skill 只做一层薄壳：自然语言 → CLI 参数。
   - R2 非零成本：存储 + Class A/B 操作费，免费额度 10GB/月，记进账单
 - **OCR 分级路线**：复用 [hybrid_ocr](https://github.com/makoshan/hybrid_ocr) 的 `快速打底 → 异常检测 → 局部升级`：先检查 PDF 文字层和版式；流式拼音页用 PP-OCR 全页 + 可疑行 VL 修复，表格页直接走 VL。昂贵模型按需加载，只有本地耗时超过云端冷启动/传输成本才上云；失败页写 manifest 状态，禁止用空输出冒充完成
 - **Skill 形态参考**：wanshuiyin 的 `vast-gpu/SKILL.md`（描述任务→租→跑→毁，只学接口设计不用其代码）
-- **备选**：RunPod（SkyPilot 原生支持 Pods，切换成本低；Serverless 留给哪天某条管线要对外提供 API）
+- **RunPod Serverless 暂不采用**：本次使用按小时 Pods；Serverless 留给哪天某条管线要对外提供 API
 
 ### 选型时否决的方案
 
@@ -101,7 +103,7 @@ Claude Skill 只做一层薄壳：自然语言 → CLI 参数。
 - 训练期：每轮微调 $50–300，一年 2–3 轮 ≈ $150–900（对比自购 A100 $15k+）
 - 隐藏项计入账单：冷启动时长、失败重跑、Vast 磁盘费（[停机仍计](https://docs.vast.ai/guides/reference/billing)）与上下行网络费、R2 存储/操作费
 
-每次任务记账字段：task_id、实例 ID、GPU 型号、启动/运行/销毁时间、Vast 实际费用、R2 增量、产物数量。
+每次任务记账字段：task_id、实例/Pod ID、GPU 型号、启动/运行/销毁时间、provider 实际或可核验费用、R2 增量、产物数量。
 
 ## 仓库结构（规划）
 
@@ -179,11 +181,9 @@ gpu-burst/
 
 ### 2026-08-01 RunPod 接入备忘
 
-- runpod SDK 装进 skypilot 的 uv tool venv 时，typer 会把 click 拖到 8.4，
-  新版对 `flag_value + default=False` 的语义变化使 `sky launch` 的
-  backend_name 变成 `False`，报「False backend is not supported」。
-  **修复：`uv pip install -p ~/.local/share/uv/tools/skypilot click==8.1.8`**；
-  runpod SDK import 不受影响。
+- 现场向 SkyPilot tool venv 注入 runpod SDK 时曾把 click 升到 8.4，导致
+  `sky launch` 报「False backend is not supported」；当前运行环境已恢复到
+  click 8.1.8，后续应通过固定的 `skypilot[vast,runpod]` 安装重建，而非继续手补。
 - `~/.runpod/config.toml` 必须有 `[default]` profile 头，裸 `api_key = ...` 不认。
-- 发射双通道：`AYUE_YAML=sky/ayue-video-720p-runpod.yaml` 切 RunPod，
-  默认 Vast。驱动门禁（>=580）两边都保留。
+- 旧双云直发脚本和现场安装 YAML 已禁用。Ayue 只能走精确 19 支包、不可变镜像和
+  launch-contract 审批门约束的 `sky/launch-ayue-720p-runpod.sh`。

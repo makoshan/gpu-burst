@@ -165,3 +165,51 @@ def test_execute_sky_launch_still_tears_down_when_callback_fails() -> None:
 
     assert "secret ledger detail" not in str(exc_info.value)
     assert calls == [plan.launch_args(), plan.down_args()]
+
+
+def test_bootstrap_plan_observes_provider_before_running_paid_workload() -> None:
+    plan = SkyLaunchPlan(
+        "gb-ayue",
+        Path("sky/ayue-workload.yaml"),
+        10,
+        bootstrap_task_file=Path("sky/ayue-bootstrap.yaml"),
+    )
+    order: list[str] = []
+
+    def runner(args, **kwargs):
+        order.append(args[1])
+        return CompletedProcess(args, 0, stdout="", stderr="")
+
+    skypilot.execute_sky_launch(
+        plan,
+        runner=runner,
+        on_launched=lambda: order.append("rate-gate"),
+        on_teardown=lambda: order.append("teardown"),
+    )
+
+    assert plan.launch_args()[4] == "sky/ayue-bootstrap.yaml"
+    assert plan.exec_args() == ["sky", "exec", "gb-ayue", "sky/ayue-workload.yaml", "-y"]
+    assert order == ["launch", "rate-gate", "exec", "teardown", "down"]
+
+
+def test_bootstrap_plan_does_not_run_workload_when_post_launch_gate_fails() -> None:
+    plan = SkyLaunchPlan(
+        "gb-ayue",
+        Path("sky/ayue-workload.yaml"),
+        10,
+        bootstrap_task_file=Path("sky/ayue-bootstrap.yaml"),
+    )
+    calls: list[list[str]] = []
+
+    def runner(args, **kwargs):
+        calls.append(args)
+        return CompletedProcess(args, 0, stdout="", stderr="")
+
+    with pytest.raises(skypilot.SkyExecutionError, match="post-launch observation failed"):
+        skypilot.execute_sky_launch(
+            plan,
+            runner=runner,
+            on_launched=lambda: (_ for _ in ()).throw(RuntimeError("rate too high")),
+        )
+
+    assert calls == [plan.launch_args(), plan.down_args()]

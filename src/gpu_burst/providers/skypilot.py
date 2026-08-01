@@ -15,6 +15,7 @@ class SkyLaunchPlan:
     cluster_name: str
     task_file: Path
     autodown_idle_minutes: int
+    bootstrap_task_file: Path | None = None
 
     def launch_args(self) -> list[str]:
         return [
@@ -22,7 +23,7 @@ class SkyLaunchPlan:
             "launch",
             "-c",
             self.cluster_name,
-            str(self.task_file),
+            str(self.bootstrap_task_file or self.task_file),
             "--idle-minutes-to-autostop",
             str(self.autodown_idle_minutes),
             "--down",
@@ -31,6 +32,9 @@ class SkyLaunchPlan:
 
     def down_args(self) -> list[str]:
         return ["sky", "down", "-y", self.cluster_name]
+
+    def exec_args(self) -> list[str]:
+        return ["sky", "exec", self.cluster_name, str(self.task_file), "-y"]
 
 
 def execute_sky_launch(
@@ -42,6 +46,7 @@ def execute_sky_launch(
 ) -> None:
     launch_issue: str | None = None
     launched_cb_issue: str | None = None
+    exec_issue: str | None = None
     callback_issue: str | None = None
     down_issue: str | None = None
     try:
@@ -56,6 +61,13 @@ def execute_sky_launch(
                 on_launched()
             except Exception:
                 launched_cb_issue = "post-launch observation failed"
+        if plan.bootstrap_task_file is not None and launch_issue is None and launched_cb_issue is None:
+            try:
+                execution = runner(plan.exec_args(), capture_output=True, text=True, check=False)
+                if execution.returncode != 0:
+                    exec_issue = "sky exec failed"
+            except OSError:
+                exec_issue = "sky exec could not start"
     finally:
         if on_teardown is not None:
             try:
@@ -69,6 +81,10 @@ def execute_sky_launch(
         except OSError:
             down_issue = "sky down could not start"
 
-    issues = [issue for issue in (launch_issue, launched_cb_issue, callback_issue, down_issue) if issue]
+    issues = [
+        issue
+        for issue in (launch_issue, launched_cb_issue, exec_issue, callback_issue, down_issue)
+        if issue
+    ]
     if issues:
         raise SkyExecutionError("; ".join(issues))

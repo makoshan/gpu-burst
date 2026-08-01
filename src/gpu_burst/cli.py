@@ -9,12 +9,15 @@ from typing import Annotated
 
 import typer
 
+from gpu_burst.ayue_runpod import AyuePlanError, build_ayue_runpod_plan
 from gpu_burst.config import data_home
-from gpu_burst.config import load_settings
+from gpu_burst.config import load_settings, runpod_config_file
+from gpu_burst.credentials import write_runpod_config
 from gpu_burst.doctor import build_report, exit_code
 from gpu_burst.ledger import Ledger, utc_now
 from gpu_burst.lifecycle import ItemState, TaskState
 from gpu_burst.manifests import TaskSpec, item_key, load_task_json, validate_for_run
+from gpu_burst.providers.runpod_api import RunPodApiError, RunPodClient, verify_terminated
 from gpu_burst.providers.skypilot import SkyExecutionError, SkyLaunchPlan, execute_sky_launch
 from gpu_burst.providers.vast_api import VastApiError, VastClient, verify_destroyed
 from gpu_burst.quote import build_quote
@@ -52,12 +55,12 @@ def _require_live_ready() -> None:
         raise typer.Exit(exit_code(report))
 
 
-def _write_hello_world_sky_task(path: Path, gpu: str) -> None:
+def _write_hello_world_sky_task(path: Path, provider: str, gpu: str) -> None:
     path.write_text(
         "\n".join(
             [
                 "resources:",
-                "  cloud: vast",
+                f"  cloud: {provider}",
                 f"  accelerators: {gpu}:1",
                 "  disk_size: 30",
                 "  use_spot: false",
@@ -72,6 +75,258 @@ def _write_hello_world_sky_task(path: Path, gpu: str) -> None:
         ),
         encoding="utf-8",
     )
+
+
+@app.command("configure-runpod")
+def configure_runpod(
+    from_env: bool = typer.Option(False, "--from-env", help="Read RUNPOD_API_KEY without placing it on argv."),
+) -> None:
+    key = os.environ.get("RUNPOD_API_KEY", "") if from_env else typer.prompt("RunPod API key", hide_input=True)
+    try:
+        write_runpod_config(key, runpod_config_file())
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(2) from exc
+    typer.echo(f"RunPod credentials configured at {runpod_config_file()} with mode 0600.")
+
+
+@app.command("ayue-720p-plan")
+def ayue_720p_plan(
+    jobpack: Path = typer.Option(..., "--jobpack", exists=True, file_okay=False),
+    image: str = typer.Option(..., "--image", help="Immutable repository@sha256 image reference."),
+    output: Path = typer.Option(..., "--output", dir_okay=False),
+    allow_pending: bool = typer.Option(
+        False,
+        "--allow-pending",
+        help="Write a non-launchable plan while surfacing unresolved paid gates.",
+    ),
+) -> None:
+    settings = load_settings()
+    try:
+        plan = build_ayue_runpod_plan(
+            jobpack,
+            image,
+            allow_pending=allow_pending,
+            max_hourly_cost_usd=settings.provider.runpod.max_hourly_cost_usd,
+        )
+    except AyuePlanError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(2) from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(plan.sky_yaml, encoding="utf-8")
+    bootstrap_output = output.with_suffix(".bootstrap.yaml")
+    bootstrap_output.write_text(plan.bootstrap_yaml, encoding="utf-8")
+    payload = plan.as_dict()
+    payload["sky_yaml"] = str(output.resolve())
+    payload["bootstrap_yaml"] = str(bootstrap_output.resolve())
+    _emit_json(payload)
+
+
+@app.command("ayue-720p-launch")
+def ayue_720p_launch(
+    jobpack: Path = typer.Option(..., "--jobpack", exists=True, file_okay=False),
+    image: str = typer.Option(..., "--image", help="Approved immutable repository@sha256 image reference."),
+    confirm_paid: bool = typer.Option(False, "--confirm-paid"),
+    allow_concurrent: bool = typer.Option(
+        False,
+        "--allow-concurrent",
+        help="Launch even when the RunPod account already has Pods.",
+    ),
+) -> None:
+    if not confirm_paid:
+        typer.echo("Use --confirm-paid after the exact package, image, hashes, and cost are approved.")
+        raise typer.Exit(2)
+    settings = load_settings()
+    try:
+        ayue_plan = build_ayue_runpod_plan(
+            jobpack,
+            image,
+            allow_pending=False,
+            max_hourly_cost_usd=settings.provider.runpod.max_hourly_cost_usd,
+        )
+    except AyuePlanError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(2) from exc
+    if settings.provider.active != "runpod":
+        typer.echo("Ayue 720P launch requires GPU_BURST_PROVIDER=runpod or provider.active=runpod.")
+        raise typer.Exit(2)
+    _require_live_ready()
+
+    task_id = _new_task_id("ayue-720p-19")
+    cluster_name = f"gb-ayue-720p-19-{task_id.rsplit('-', 1)[-1]}"
+    ledger = Ledger(data_home())
+    ledger.create_task(task_id, ayue_plan.as_dict())
+    task_file = ledger.task_dir(task_id) / "sky-task.yaml"
+    task_file.write_text(ayue_plan.sky_yaml, encoding="utf-8")
+    bootstrap_file = ledger.task_dir(task_id) / "sky-bootstrap.yaml"
+    bootstrap_file.write_text(ayue_plan.bootstrap_yaml, encoding="utf-8")
+    sky_plan = SkyLaunchPlan(
+        cluster_name=cluster_name,
+        task_file=task_file,
+        autodown_idle_minutes=settings.safety.autodown_idle_minutes,
+        bootstrap_task_file=bootstrap_file,
+    )
+    manifest: dict[str, object] = {
+        "task_id": task_id,
+        "task_state": TaskState.QUOTED,
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
+        "dry_run": False,
+        "provider": {
+            "name": "skypilot-runpod",
+            "cluster_name": cluster_name,
+            "instance_id": None,
+        },
+        "package": ayue_plan.as_dict(),
+        "launch_args": sky_plan.launch_args(),
+        "down_args": sky_plan.down_args(),
+    }
+    ledger.append_event(task_id, "CREATED", {"phase": "ayue-720p-19"})
+    ledger.append_event(
+        task_id,
+        "PAID_GATES_PASSED",
+        {
+            "package_fingerprint": ayue_plan.package_fingerprint,
+            "launch_contract_sha256": ayue_plan.launch_contract_sha256,
+        },
+    )
+    _run_runpod_hello_world(
+        task_id=task_id,
+        cluster_name=cluster_name,
+        ledger=ledger,
+        manifest=manifest,
+        plan=sky_plan,
+        allow_concurrent=allow_concurrent,
+        max_hourly_cost_usd=settings.provider.runpod.max_hourly_cost_usd,
+    )
+
+
+def _run_runpod_hello_world(
+    *,
+    task_id: str,
+    cluster_name: str,
+    ledger: Ledger,
+    manifest: dict[str, object],
+    plan: SkyLaunchPlan,
+    allow_concurrent: bool,
+    max_hourly_cost_usd: float,
+) -> None:
+    manifest["task_state"] = TaskState.PROVISIONING
+    manifest["updated_at"] = utc_now()
+    ledger.write_manifest(task_id, manifest)
+    ledger.append_event(task_id, "PROVISIONING", {"cluster_name": cluster_name})
+    launch_started_at = datetime.now(UTC)
+    try:
+        runpod = RunPodClient()
+        pre_pods = {pod.pod_id: pod for pod in runpod.list_pods()}
+    except RunPodApiError as exc:
+        manifest["task_state"] = TaskState.FAILED
+        manifest["updated_at"] = utc_now()
+        manifest["error"] = "runpod preflight failed"
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "FAILED", {"error": "runpod preflight failed", "detail": str(exc)})
+        typer.echo(f"Pre-launch RunPod API check failed: {exc}")
+        raise typer.Exit(2) from exc
+    ledger.append_event(task_id, "RUNPOD_SNAPSHOT", {"preexisting_pods": sorted(pre_pods)})
+    if pre_pods and not allow_concurrent:
+        message = (
+            f"RunPod account already has Pods {sorted(pre_pods)} "
+            "(another session's workload?). Re-run with --allow-concurrent to override."
+        )
+        manifest["task_state"] = TaskState.FAILED
+        manifest["updated_at"] = utc_now()
+        manifest["error"] = message
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "ABORTED_CONCURRENT", {"preexisting_pods": sorted(pre_pods)})
+        typer.echo(message)
+        raise typer.Exit(2)
+
+    ours: list[dict[str, object]] = []
+
+    def observe_pods() -> None:
+        new = [pod for pod in runpod.list_pods() if pod.name.startswith(cluster_name)]
+        ours.extend(pod.as_dict() for pod in new)
+        ledger.append_event(task_id, "POD_OBSERVED", {"pods": [pod.as_dict() for pod in new]})
+        missing_rate = [pod.pod_id for pod in new if pod.cost_per_hour is None]
+        over_limit = [
+            pod for pod in new
+            if pod.cost_per_hour is not None and pod.cost_per_hour > max_hourly_cost_usd
+        ]
+        if not new or missing_rate or over_limit:
+            ledger.append_event(
+                task_id,
+                "RUNPOD_RATE_LIMIT_EXCEEDED",
+                {
+                    "maximum_usd_per_hour": max_hourly_cost_usd,
+                    "missing_rate_pod_ids": missing_rate,
+                    "observed": [pod.as_dict() for pod in new],
+                },
+            )
+            raise RuntimeError("RunPod observed rate gate did not pass")
+
+    def record_teardown() -> None:
+        manifest["task_state"] = TaskState.TEARING_DOWN
+        manifest["updated_at"] = utc_now()
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "TEARING_DOWN", {"cluster_name": cluster_name})
+
+    sky_error: SkyExecutionError | None = None
+    try:
+        execute_sky_launch(plan, on_launched=observe_pods, on_teardown=record_teardown)
+    except SkyExecutionError as exc:
+        sky_error = exc
+
+    our_ids = {str(item["pod_id"]) for item in ours}
+    try:
+        lingering_ids = {pod.pod_id for pod in runpod.list_pods()} - set(pre_pods)
+        verification = verify_terminated(runpod, our_ids | lingering_ids)
+    except RunPodApiError as exc:
+        verification = None
+        ledger.append_event(task_id, "TERMINATE_VERIFY_ERROR", {"error": str(exc)})
+    if verification is not None:
+        event = "TERMINATE_VERIFIED" if verification.verified else "TERMINATE_LEAKED"
+        ledger.append_event(
+            task_id,
+            event,
+            {
+                "checks": verification.checks,
+                "escalated": verification.escalated,
+                "leaked_ids": list(verification.leaked_ids),
+            },
+        )
+
+    runtime_hours = (datetime.now(UTC) - launch_started_at).total_seconds() / 3600
+    rates = [item["cost_per_hour"] for item in ours if item.get("cost_per_hour") is not None]
+    expected_cost = round(sum(float(rate) for rate in rates) * runtime_hours, 4) if rates else None
+    billing = {
+        "provider": "runpod",
+        "billing_source": "estimated_from_observed_rate",
+        "wall_clock_hours": round(runtime_hours, 4),
+        "observed_rates_per_hour": rates,
+        "expected_cost_usd": expected_cost,
+        "pods": ours,
+    }
+    (ledger.task_dir(task_id) / "billing.json").write_text(
+        json.dumps(billing, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    ledger.append_event(task_id, "BILLING_RECORDED", billing)
+    manifest["billing"] = billing
+    manifest["terminate_verified"] = bool(verification and verification.verified)
+
+    if sky_error is not None or verification is None or not verification.verified:
+        manifest["task_state"] = TaskState.FAILED
+        manifest["updated_at"] = utc_now()
+        manifest["error"] = str(sky_error) if sky_error else "termination verification did not pass"
+        ledger.write_manifest(task_id, manifest)
+        ledger.append_event(task_id, "FAILED", {"error": manifest["error"]})
+        typer.echo(manifest["error"])
+        raise typer.Exit(1)
+
+    manifest["task_state"] = TaskState.SUCCEEDED
+    manifest["updated_at"] = utc_now()
+    ledger.write_manifest(task_id, manifest)
+    ledger.append_event(task_id, "SUCCEEDED", {"cluster_name": cluster_name})
+    _emit_json(manifest)
 
 
 @app.command()
@@ -198,7 +453,9 @@ def hello_world(
     ledger = Ledger(data_home())
     ledger.create_task(task_id, {"task_id": task_id, "workload": "hello-world"})
     task_file = ledger.task_dir(task_id) / "sky-task.yaml"
-    _write_hello_world_sky_task(task_file, settings.provider.vast.default_gpu)
+    active_provider = settings.provider.active
+    provider_settings = settings.provider.runpod if active_provider == "runpod" else settings.provider.vast
+    _write_hello_world_sky_task(task_file, active_provider, provider_settings.default_gpu)
     plan = SkyLaunchPlan(
         cluster_name=cluster_name,
         task_file=task_file,
@@ -211,16 +468,22 @@ def hello_world(
         "updated_at": utc_now(),
         "dry_run": dry_run,
         "provider": {
-            "name": "skypilot-vast",
+            "name": f"skypilot-{active_provider}",
             "cluster_name": cluster_name,
             "instance_id": None,
         },
-        "policy": {
+        "policy": ({
+            "cloud_type": settings.provider.runpod.cloud_type,
+            "max_hourly_cost_usd": settings.provider.runpod.max_hourly_cost_usd,
+            "default_gpu": settings.provider.runpod.default_gpu,
+            "allowed_cuda_versions": settings.provider.runpod.allowed_cuda_versions,
+            "autodown_idle_minutes": settings.safety.autodown_idle_minutes,
+        } if active_provider == "runpod" else {
             "datacenter_only": settings.provider.vast.datacenter_only,
             "max_hourly_cost_usd": settings.provider.vast.max_hourly_cost_usd,
             "default_gpu": settings.provider.vast.default_gpu,
             "autodown_idle_minutes": settings.safety.autodown_idle_minutes,
-        },
+        }),
         "launch_args": plan.launch_args(),
         "down_args": plan.down_args(),
     }
@@ -231,6 +494,18 @@ def hello_world(
         ledger.write_manifest(task_id, manifest)
         ledger.append_event(task_id, "DRY_RUN_COMPLETE", {"dry_run_state": "SUCCEEDED"})
         _emit_json(manifest)
+        return
+
+    if active_provider == "runpod":
+        _run_runpod_hello_world(
+            task_id=task_id,
+            cluster_name=cluster_name,
+            ledger=ledger,
+            manifest=manifest,
+            plan=plan,
+            allow_concurrent=allow_concurrent,
+            max_hourly_cost_usd=settings.provider.runpod.max_hourly_cost_usd,
+        )
         return
 
     manifest["task_state"] = TaskState.PROVISIONING

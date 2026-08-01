@@ -15,3 +15,11 @@ def test_redacts_common_secret_assignments_and_presigned_query() -> None:
     assert "X-Amz-Signature" not in redacted
     assert "[REDACTED]" in redacted
 
+
+def test_redacts_bare_runpod_api_tokens() -> None:
+    token = "rpa_" + "A" * 44
+
+    redacted = redact_text(f"request failed for bearer {token}")
+
+    assert token not in redacted
+    assert "bearer [REDACTED]" in redacted

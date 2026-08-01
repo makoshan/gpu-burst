@@ -1,65 +1,8 @@
-# 阿粤 720P 视频重拍管线（Wan I2V 底片 + InfiniteTalk V2V 对口型）
-#
-# 路线（2026-08-01 定案）：权重 R2-first、HF 兜底、首跑 tee 回 R2；
-# 本地（thursday-win/Clash）零上传。发射前必须过 docker 预检
-# （见 gpu-burst-infra 方法论：setup 块本地同镜像逐字跑绿再发射）。
-#
-# ✅ 前置验证已完成（2026-08-01）：
-#  1. InfiniteTalk = Kijai/WanVideo_comfy: InfiniteTalk/Wan2_1-InfiniTetalk-Single_fp16.safetensors (5.1GB)
-#  2. 720P 蒸馏 LoRA 不存在于 Kijai 仓库 → 默认挂 480p rank64 LoRA 跑 720P
-#     （与本地 720P A/B 同组合）；无 LoRA 20 步原生采样留作云上 A/B 对照
-#  3. commit 钉版（照抄 thursday-win 现网）：ComfyUI b3581971 /
-#     WanVideoWrapper 088128b / VideoHelperSuite 4ee72c0；
-#     wav2vec = TencentGameMate/chinese-wav2vec2-base
-#
-# 用法（全部需用户终端亲跑付费命令）：
-#   sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 10 --down -y
-
+# DISABLED LEGACY FILE.
+# The old Vast/30-job package must not be launched. The invalid provider makes
+# direct `sky launch` fail during validation, before a paid resource is created.
 resources:
-  cloud: vast
-  accelerators: RTX4090:1     # 24GB：720P fp8 主模型 17GB + 激活，480P 实测 15.9G 顶 16G 卡
-  disk_size: 80               # 权重 ~30GB + ComfyUI + 输出
-
-envs:
-  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
-  R2_CACHE: gpu-burst-cache
-  R2_JOBS: gpu-burst-jobs
-
-file_mounts:
-  # 任务包：job JSON（720x1280 版工作流）+ 源音频 + 母版图
-  /job: ./tasks/ayue-720p-jobpack
-  # R2 凭证走 file_mounts，不要用「后台 launch + ssh 注入」——那个包装层会让
-  # sky launch 提前退出，--down 随即拆机（2026-08-01 整批首发就这么废了一次）。
-  /root/.aws/credentials: ~/.config/gpu-burst/r2-credentials
-
-setup: |
-  set -euo pipefail
-  # ---- 驱动门禁：黄金栈是 torch 2.13+cu130，宿主机驱动必须 >= 580（CUDA 13）----
-  # 2026-08-01 整批失败的真根因：租到 CUDA 12.8 驱动的宿主机。不达标就立刻失败，
-  # 让发射方 down 掉换机，别浪费后续 setup 时间。
-  DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | cut -d. -f1)
-  [ "$DRV" -ge 580 ] || { echo "DRIVER-TOO-OLD: $DRV < 580 (need CUDA 13)"; exit 47; }
-  echo "driver ok: $DRV"
-  PIP=/root/miniconda3/bin/pip; PY=/root/miniconda3/bin/python
-  $PY --version
-  git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
-  git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
-  git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite && git -C /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite checkout 4ee72c0
-  git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
-  # ---- 黄金 freeze 精确重放：thursday-win 生产环境（每天在跑这条管线）的 pip freeze，
-  #      不是滚动 requirements。cu130 轮子从 pytorch 官方 index 拉。----
-  $PIP install -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
-  $PIP install s5cmd huggingface_hub[hf_transfer]
-  # 权重：R2-first（已全量缓存），HF 兜底
-  PATH=/root/miniconda3/bin:$PATH bash /job/fetch_weights.sh
+  cloud: disabled_legacy_ayue_vast
 
 run: |
-  set -euo pipefail
-  export PYTHONPATH="${PYTHONPATH:-}"
-  export PATH=/root/miniconda3/bin:$PATH
-  cd /root/ComfyUI && python main.py --listen 127.0.0.1 --port 8188 &
-  cp /job/inputs/* /root/ComfyUI/input/ && python /job/wait_comfy_ready.py
-  # 两阶段：底片(纯I2V) -> V2V 对口型；job JSON 由 /job/queue_all.py 按清单投递并轮询 history
-  python /job/queue_all.py --stage sources && python /job/queue_all.py --stage v2v
-  # 成片 + 日志回传
-  s5cmd --endpoint-url $R2_ENDPOINT cp "/root/ComfyUI/output/*" "s3://$R2_JOBS/ayue-720p-$(date +%Y%m%d)/output/"
+  exit 64

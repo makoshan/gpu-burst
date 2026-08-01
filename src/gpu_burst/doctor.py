@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 import tomllib
 from configparser import ConfigParser
@@ -9,7 +10,14 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from gpu_burst import __version__
-from gpu_burst.config import Settings, aws_credentials_file, user_config_file, vast_api_key_file
+from gpu_burst.config import (
+    Settings,
+    aws_credentials_file,
+    load_settings,
+    runpod_config_file,
+    user_config_file,
+    vast_api_key_file,
+)
 
 
 class DoctorCheck(BaseModel):
@@ -105,8 +113,56 @@ def _vast_key_check(path: Path) -> DoctorCheck:
     return DoctorCheck(name="vast_api_key", status="present", detail=str(path))
 
 
+def _runpod_key_check(path: Path) -> DoctorCheck:
+    if not path.exists():
+        return DoctorCheck(name="runpod_api_key", status="missing", detail=str(path))
+    try:
+        permissions = path.stat().st_mode & 0o777
+    except OSError:
+        return DoctorCheck(name="runpod_api_key", status="invalid", detail=f"{path}: unreadable")
+    if permissions & 0o077:
+        return DoctorCheck(name="runpod_api_key", status="invalid", detail=f"{path}: unsafe permissions")
+    try:
+        with path.open("rb") as handle:
+            payload = tomllib.load(handle)
+        has_value = bool(str(payload.get("default", {}).get("api_key", "")).strip())
+    except (OSError, tomllib.TOMLDecodeError, TypeError, AttributeError):
+        return DoctorCheck(name="runpod_api_key", status="invalid", detail=f"{path}: invalid configuration")
+    if not has_value:
+        return DoctorCheck(name="runpod_api_key", status="invalid", detail=f"{path}: empty")
+    return DoctorCheck(name="runpod_api_key", status="present", detail=str(path))
+
+
+def _sky_runpod_check() -> DoctorCheck:
+    try:
+        result = subprocess.run(
+            ["sky", "check", "runpod"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return DoctorCheck(
+            name="sky_runpod",
+            status="missing",
+            detail='install the matching "skypilot[runpod]" extra and run sky check runpod',
+        )
+    if result.returncode != 0:
+        return DoctorCheck(
+            name="sky_runpod",
+            status="missing",
+            detail='install the matching "skypilot[runpod]" extra and run sky check runpod',
+        )
+    return DoctorCheck(name="sky_runpod", status="present", detail="sky check runpod passed")
+
+
 def build_report() -> DoctorReport:
     config_path = user_config_file()
+    try:
+        provider = load_settings().provider.active
+    except (OSError, tomllib.TOMLDecodeError, ValidationError):
+        provider = "vast"
     checks = [
         DoctorCheck(
             name="python",
@@ -115,13 +171,16 @@ def build_report() -> DoctorReport:
         ),
         _tool_check("uv"),
         _tool_check("sky"),
-        _tool_check("vastai"),
         _tool_check("s5cmd"),
         _tool_check("docker"),
+        DoctorCheck(name="active_provider", status="present", detail=provider),
         _config_check(config_path),
         _r2_storage_check(config_path, aws_credentials_file()),
-        _vast_key_check(vast_api_key_file()),
     ]
+    if provider == "runpod":
+        checks.extend([_sky_runpod_check(), _runpod_key_check(runpod_config_file())])
+    else:
+        checks.extend([_tool_check("vastai"), _vast_key_check(vast_api_key_file())])
     paid_ready = all(check.status == "present" for check in checks)
     return DoctorReport(version=__version__, paid_runtime_ready=paid_ready, checks=checks)
 

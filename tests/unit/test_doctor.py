@@ -1,3 +1,5 @@
+import subprocess
+
 from gpu_burst.doctor import build_report, exit_code
 
 
@@ -77,6 +79,73 @@ aws_profile = "gpu-burst-r2"
     assert _check(report, "r2_storage").status == "present"
     assert report.paid_runtime_ready is True
     assert exit_code(report) == 0
+
+
+def test_doctor_runpod_mode_requires_runpod_not_vast_credentials(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "config.toml"
+    credentials_path = tmp_path / "credentials"
+    runpod_path = tmp_path / "runpod.toml"
+    credentials_path.write_text(
+        "[gpu-burst-r2]\naws_access_key_id = key\naws_secret_access_key = secret\n",
+        encoding="utf-8",
+    )
+    config_path.write_text(
+        "[storage]\nendpoint = \"https://example.r2.cloudflarestorage.com\"\n"
+        "aws_profile = \"gpu-burst-r2\"\n",
+        encoding="utf-8",
+    )
+    runpod_path.write_text('[default]\napi_key = "rpa_test_only"\n', encoding="utf-8")
+    runpod_path.chmod(0o600)
+    monkeypatch.setenv("GPU_BURST_PROVIDER", "runpod")
+    monkeypatch.setenv("GPU_BURST_CONFIG", str(config_path))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(credentials_path))
+    monkeypatch.setenv("GPU_BURST_RUNPOD_CONFIG_FILE", str(runpod_path))
+    monkeypatch.setenv("GPU_BURST_VAST_API_KEY_FILE", str(tmp_path / "missing-vast-key"))
+    monkeypatch.setattr("gpu_burst.doctor.shutil.which", lambda name: f"/tools/{name}")
+    monkeypatch.setattr(
+        "gpu_burst.doctor.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+
+    report = build_report()
+
+    assert _check(report, "active_provider").detail == "runpod"
+    assert _check(report, "runpod_api_key").status == "present"
+    assert _check(report, "sky_runpod").status == "present"
+    assert all(check.name != "vast_api_key" for check in report.checks)
+    assert all(check.name != "vastai" for check in report.checks)
+    assert all(check.name != "runpod" for check in report.checks)
+    assert report.paid_runtime_ready is True
+
+
+def test_doctor_runpod_mode_reports_missing_skypilot_extra(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("GPU_BURST_PROVIDER", "runpod")
+    monkeypatch.setattr("gpu_burst.doctor.shutil.which", lambda name: f"/tools/{name}")
+    monkeypatch.setattr(
+        "gpu_burst.doctor.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "missing extra"),
+    )
+
+    report = build_report()
+
+    check = _check(report, "sky_runpod")
+    assert check.status == "missing"
+    assert "skypilot[runpod]" in check.detail
+
+
+def test_doctor_rejects_world_readable_runpod_config(tmp_path, monkeypatch) -> None:
+    runpod_path = tmp_path / "runpod.toml"
+    runpod_path.write_text('[default]\napi_key = "rpa_test_only"\n', encoding="utf-8")
+    runpod_path.chmod(0o644)
+    monkeypatch.setenv("GPU_BURST_PROVIDER", "runpod")
+    monkeypatch.setenv("GPU_BURST_RUNPOD_CONFIG_FILE", str(runpod_path))
+
+    report = build_report()
+
+    check = _check(report, "runpod_api_key")
+    assert check.status == "invalid"
+    assert "permissions" in check.detail
+    assert "rpa_test_only" not in check.detail
 
 
 def test_doctor_rejects_missing_r2_endpoint(tmp_path, monkeypatch) -> None:

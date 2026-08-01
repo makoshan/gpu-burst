@@ -10,6 +10,7 @@ SECRET_ASSIGNMENT_RE = re.compile(
     r"aws_session_token|vast_api_key|api_key|access_token"
     r")\b\s*[:=]\s*([^\s]+)"
 )
+RUNPOD_TOKEN_RE = re.compile(r"\brpa_[A-Za-z0-9_-]{20,}\b")
 
 
 def _redact_presigned_url(value: str) -> str:
@@ -24,5 +25,5 @@ def _redact_presigned_url(value: str) -> str:
 
 def redact_text(text: str) -> str:
     redacted = SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
+    redacted = RUNPOD_TOKEN_RE.sub("[REDACTED]", redacted)
     return re.sub(r"https?://[^\s]+", lambda m: _redact_presigned_url(m.group(0)), redacted)
-

@@ -4,13 +4,13 @@
 # 本地（thursday-win/Clash）零上传。发射前必须过 docker 预检
 # （见 gpu-burst-infra 方法论：setup 块本地同镜像逐字跑绿再发射）。
 #
-# ⚠️ 未验证项（发射前解决）：
-#  1. InfiniteTalk 权重 HF 路径待确认（本地文件名 Wan2_1-InfiniTetalk-Single_fp16.safetensors，
-#     注意 "InfiniTetalk" 拼写；不在 Kijai/WanVideo_comfy 根目录，可能在子目录或别的仓库）
-#  2. lightx2v 720P I2V 蒸馏 LoRA 是否存在——不存在则两选一：
-#     a) 用 480p rank64 LoRA 跑 720P（本地 A/B 即此组合，画质可用但非原生）
-#     b) 不挂蒸馏 LoRA 走 20 步原生采样（慢 5 倍，A/B 后定）
-#  3. ComfyUI + WanVideoWrapper + VideoHelperSuite 的 commit 钉版（照抄 thursday-win 现网版本）
+# ✅ 前置验证已完成（2026-08-01）：
+#  1. InfiniteTalk = Kijai/WanVideo_comfy: InfiniteTalk/Wan2_1-InfiniTetalk-Single_fp16.safetensors (5.1GB)
+#  2. 720P 蒸馏 LoRA 不存在于 Kijai 仓库 → 默认挂 480p rank64 LoRA 跑 720P
+#     （与本地 720P A/B 同组合）；无 LoRA 20 步原生采样留作云上 A/B 对照
+#  3. commit 钉版（照抄 thursday-win 现网）：ComfyUI b3581971 /
+#     WanVideoWrapper 088128b / VideoHelperSuite 4ee72c0；
+#     wav2vec = TencentGameMate/chinese-wav2vec2-base
 #
 # 用法（全部需用户终端亲跑付费命令）：
 #   sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 10 --down -y
@@ -32,9 +32,9 @@ file_mounts:
 setup: |
   set -euo pipefail
   # --- 钉版安装（TODO: 预检后钉 commit）---
-  git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI
-  git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper
-  git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite
+  git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
+  git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
+  git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite && git -C /root/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite checkout 4ee72c0
   git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
   pip install -r /root/ComfyUI/requirements.txt
   pip install -r /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt

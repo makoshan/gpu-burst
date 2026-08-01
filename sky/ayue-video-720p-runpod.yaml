@@ -41,7 +41,10 @@ setup: |
   DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | cut -d. -f1)
   [ "$DRV" -ge 580 ] || { echo "DRIVER-TOO-OLD: $DRV < 580 (need CUDA 13)"; exit 47; }
   echo "driver ok: $DRV"
-  PY=$(command -v python3); PIP="$PY -m pip"
+  # RunPod pytorch 官方镜像：torch 2.13+cu130 就在系统 python3 里（无 conda）；
+  # PEP668 保护要 --break-system-packages；debian 装的包没 RECORD 文件，
+  # freeze 盖装要 --ignore-installed（PyJWT 实测卡死过一轮）。
+  PY=/usr/bin/python3; PIP="$PY -m pip"
   apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1 || true
   $PY --version
   git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
@@ -50,15 +53,15 @@ setup: |
   git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
   # ---- 黄金 freeze 精确重放：thursday-win 生产环境（每天在跑这条管线）的 pip freeze，
   #      不是滚动 requirements。cu130 轮子从 pytorch 官方 index 拉。----
-  $PIP install -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
-  $PIP install s5cmd huggingface_hub[hf_transfer]
+  $PIP install --break-system-packages --ignore-installed -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
+  $PIP install --break-system-packages s5cmd huggingface_hub[hf_transfer]
   # 权重：R2-first（已全量缓存），HF 兜底
   bash /job/fetch_weights.sh
 
 run: |
   set -euo pipefail
   export PYTHONPATH="${PYTHONPATH:-}"
-  cd /root/ComfyUI && python3 main.py --listen 127.0.0.1 --port 8188 &
+  cd /root/ComfyUI && /usr/bin/python3 main.py --listen 127.0.0.1 --port 8188 &
   cp /job/inputs/* /root/ComfyUI/input/ && python /job/wait_comfy_ready.py
   # 两阶段：底片(纯I2V) -> V2V 对口型；job JSON 由 /job/queue_all.py 按清单投递并轮询 history
   python /job/queue_all.py --stage sources && python /job/queue_all.py --stage v2v

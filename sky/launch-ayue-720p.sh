@@ -4,7 +4,7 @@
 # 不达标 exit 47 → 这里 down 掉换机重试，最多 4 台。
 set -euo pipefail
 cd "$(dirname "$0")/.."
-CMD=(sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 15 --down --detach-run -y)
+CMD=(sky launch -c ayue-720p ${AYUE_YAML:-sky/ayue-video-720p.yaml} --idle-minutes-to-autostop 15 --down --detach-run -y)
 if [[ "${1:-}" == "--confirm-paid" && "${GPU_BURST_LIVE:-}" == "1" ]]; then
   uv run gpu-burst doctor >/dev/null || { echo "doctor not ready"; exit 1; }
   [[ -f ~/.config/gpu-burst/r2-credentials ]] || { echo "missing r2-credentials"; exit 1; }
@@ -28,4 +28,4 @@ if [[ "${1:-}" == "--confirm-paid" && "${GPU_BURST_LIVE:-}" == "1" ]]; then
   echo "[launch] 连续 4 台驱动都不达标，停"; exit 4
 fi
 echo "[dry-run] ${CMD[*]}"
-uv run --with pyyaml python -c "import yaml; yaml.safe_load(open('sky/ayue-video-720p.yaml')); print('YAML parse OK')"
+uv run --with pyyaml python -c "import yaml; yaml.safe_load(open('${AYUE_YAML:-sky/ayue-video-720p.yaml}')); print('YAML parse OK')"

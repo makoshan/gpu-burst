@@ -26,15 +26,45 @@ MEDIA_FIELDS = ("audio", "video", "image")
 
 
 def load_declared_weights(pack: Path) -> dict[str, str]:
-    """从 fetch_weights.sh 解析出会被放进 models/ 的文件名。"""
+    """会被放进 models/ 的文件名。优先读 weights-manifest.json（带 sha256 的权威源），
+    回退到解析 fetch_weights.sh 的内联声明。"""
+    mf = pack / "weights-manifest.json"
+    if mf.exists():
+        data = json.loads(mf.read_text(encoding="utf-8"))
+        out = {Path(k).name: k for k in data}
+        return out
     sh = (pack / "fetch_weights.sh").read_text(encoding="utf-8")
     out = {}
     for dst, _src in WEIGHT_RE.findall(sh):
         out[Path(dst).name] = dst
-    # wav2vec 是整目录下载，单独标记
     if "chinese-wav2vec2-base" in sh:
         out["chinese-wav2vec2-base"] = "wav2vec/chinese-wav2vec2-base"
     return out
+
+
+def validate_weights_manifest(pack: Path) -> list[str]:
+    """权重清单自身的完整性：每个文件要有 sha256（wav2vec 要有不可变 revision）。"""
+    mf = pack / "weights-manifest.json"
+    if not mf.exists():
+        return ["缺少 weights-manifest.json（权重无 SHA-256 锁定，禁止发射）"]
+    errs = []
+    data = json.loads(mf.read_text(encoding="utf-8"))
+    for key, meta in data.items():
+        if key.startswith("wav2vec"):
+            rev = meta.get("revision", "")
+            if not re.fullmatch(r"[0-9a-f]{40}", rev):
+                errs.append(f"weights-manifest: {key} 的 revision 不是 40 位不可变 commit（当前 '{rev}'）")
+            continue
+        sha = meta.get("sha256", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", sha):
+            errs.append(f"weights-manifest: {key} 缺少合法 sha256（当前 '{sha[:20]}'）")
+        if not meta.get("repo") or not meta.get("path"):
+            errs.append(f"weights-manifest: {key} 缺 repo/path，无法兜底下载")
+    # fetch_weights.sh 必须真的做校验，不能只声明
+    sh = (pack / "fetch_weights.sh").read_text(encoding="utf-8")
+    if "sha256sum" not in sh:
+        errs.append("fetch_weights.sh 没有 sha256sum 校验——清单等于没锁")
+    return errs
 
 
 def iter_nodes(job: dict):
@@ -51,6 +81,7 @@ def validate(pack: Path, strict_720p: bool) -> list[str]:
     if not jobs_dir.is_dir():
         return [f"缺少 {jobs_dir}"]
 
+    errors.extend(validate_weights_manifest(pack))
     weights = load_declared_weights(pack)
     job_files = sorted(jobs_dir.glob("*.json"))
     if not job_files:

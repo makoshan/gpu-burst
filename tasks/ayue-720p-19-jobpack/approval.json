@@ -1,0 +1,10 @@
+{
+ "status": "pending",
+ "package_fingerprint": "eb103ab16b6978225ca9c0da67aa8bbf7bcdac9241f4f8aec0ef2dd72354abdf",
+ "provider": "runpod",
+ "image_ref": "docker.io/makoshan/ayue-comfy@sha256:7faa6fef0b2dbe3d45fdf0a350efabf0aae976ac688bc73b7cde95364fa9b274",
+ "launch_contract_sha256": null,
+ "approved_by": null,
+ "approved_at": null,
+ "note": "待人工签字；签字前 launch_allowed 必须为 false"
+}

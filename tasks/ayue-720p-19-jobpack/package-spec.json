@@ -1,0 +1,257 @@
+{
+ "id": "ayue-720p-19-jobpack",
+ "generated_at": "2026-08-02",
+ "target": {
+  "width": 720,
+  "height": 1280,
+  "fps": 25
+ },
+ "deliverables": [
+  {
+   "id": "scene-bag-feedback",
+   "web_path": "assets/scenes/bag/feedback.mp4",
+   "produced_by": "jobs/v2v_fb_bag.json"
+  },
+  {
+   "id": "scene-bag-listening",
+   "web_path": "assets/scenes/bag/listening.mp4",
+   "produced_by": "jobs/sources_src_bag_listen.json"
+  },
+  {
+   "id": "scene-bag-speaking",
+   "web_path": "assets/scenes/bag/speaking.mp4",
+   "produced_by": "jobs/v2v_speak_bag.json"
+  },
+  {
+   "id": "scene-membership-feedback",
+   "web_path": "assets/scenes/membership/feedback.mp4",
+   "produced_by": "jobs/v2v_fb_membership.json"
+  },
+  {
+   "id": "scene-membership-listening",
+   "web_path": "assets/scenes/membership/listening.mp4",
+   "produced_by": "jobs/sources_src_membership_listen.json"
+  },
+  {
+   "id": "scene-membership-speaking",
+   "web_path": "assets/scenes/membership/speaking.mp4",
+   "produced_by": "jobs/v2v_speak_membership.json"
+  },
+  {
+   "id": "scene-payment-feedback",
+   "web_path": "assets/scenes/payment/feedback.mp4",
+   "produced_by": "jobs/v2v_fb_payment.json"
+  },
+  {
+   "id": "scene-payment-speaking",
+   "web_path": "assets/scenes/payment/speaking.mp4",
+   "produced_by": "jobs/v2v_speak_payment.json"
+  },
+  {
+   "id": "scene-price-feedback",
+   "web_path": "assets/scenes/price/feedback.mp4",
+   "produced_by": "jobs/v2v_fb_price.json"
+  },
+  {
+   "id": "scene-price-listening",
+   "web_path": "assets/scenes/price/listening.mp4",
+   "produced_by": "jobs/sources_src_price_listen.json"
+  },
+  {
+   "id": "scene-price-speaking",
+   "web_path": "assets/scenes/price/speaking.mp4",
+   "produced_by": "jobs/v2v_speak_price.json"
+  },
+  {
+   "id": "scene-terminal-failure-feedback",
+   "web_path": "assets/scenes/terminal-failure/feedback.mp4",
+   "produced_by": "jobs/v2v_fb_terminal-failure.json"
+  },
+  {
+   "id": "scene-terminal-failure-listening",
+   "web_path": "assets/scenes/terminal-failure/listening.mp4",
+   "produced_by": "jobs/sources_src_terminal-failure_listen.json"
+  },
+  {
+   "id": "scene-terminal-failure-speaking",
+   "web_path": "assets/scenes/terminal-failure/speaking.mp4",
+   "produced_by": "jobs/v2v_speak_terminal-failure.json"
+  },
+  {
+   "id": "teaching-answer-line-02",
+   "web_path": "assets/teaching/line-02.mp4",
+   "produced_by": "jobs/teach_line-02.json"
+  },
+  {
+   "id": "teaching-answer-line-04",
+   "web_path": "assets/teaching/line-04.mp4",
+   "produced_by": "jobs/teach_line-04.json"
+  },
+  {
+   "id": "teaching-answer-line-06",
+   "web_path": "assets/teaching/line-06.mp4",
+   "produced_by": "jobs/teach_line-06.json"
+  },
+  {
+   "id": "teaching-answer-line-07",
+   "web_path": "assets/teaching/line-07.mp4",
+   "produced_by": "jobs/teach_line-07.json"
+  },
+  {
+   "id": "teaching-answer-line-09",
+   "web_path": "assets/teaching/line-09.mp4",
+   "produced_by": "jobs/teach_line-09.json"
+  }
+ ],
+ "executions": [
+  {
+   "job": "jobs/sources_src_bag_fb.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_bag_listen.json",
+   "deliverable": "scene-bag-listening",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/sources_src_bag_speak.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_membership_fb.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_membership_listen.json",
+   "deliverable": "scene-membership-listening",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/sources_src_membership_speak.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_payment_fb.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_payment_speak.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_price_fb.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_price_listen.json",
+   "deliverable": "scene-price-listening",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/sources_src_price_speak.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_terminal-failure_fb.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/sources_src_terminal-failure_listen.json",
+   "deliverable": "scene-terminal-failure-listening",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/sources_src_terminal-failure_speak.json",
+   "deliverable": null,
+   "kind": "intermediate"
+  },
+  {
+   "job": "jobs/teach_line-02.json",
+   "deliverable": "teaching-answer-line-02",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/teach_line-04.json",
+   "deliverable": "teaching-answer-line-04",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/teach_line-06.json",
+   "deliverable": "teaching-answer-line-06",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/teach_line-07.json",
+   "deliverable": "teaching-answer-line-07",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/teach_line-09.json",
+   "deliverable": "teaching-answer-line-09",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_fb_bag.json",
+   "deliverable": "scene-bag-feedback",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_fb_membership.json",
+   "deliverable": "scene-membership-feedback",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_fb_payment.json",
+   "deliverable": "scene-payment-feedback",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_fb_price.json",
+   "deliverable": "scene-price-feedback",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_fb_terminal-failure.json",
+   "deliverable": "scene-terminal-failure-feedback",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_speak_bag.json",
+   "deliverable": "scene-bag-speaking",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_speak_membership.json",
+   "deliverable": "scene-membership-speaking",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_speak_payment.json",
+   "deliverable": "scene-payment-speaking",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_speak_price.json",
+   "deliverable": "scene-price-speaking",
+   "kind": "final"
+  },
+  {
+   "job": "jobs/v2v_speak_terminal-failure.json",
+   "deliverable": "scene-terminal-failure-speaking",
+   "kind": "final"
+  }
+ ],
+ "approval": {
+  "status": "pending",
+  "launch_allowed": false
+ }
+}

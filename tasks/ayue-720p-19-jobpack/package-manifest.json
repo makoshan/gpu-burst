@@ -1,0 +1,283 @@
+{
+ "files": [
+  {
+   "path": "fetch_weights.sh",
+   "sha256": "de159475a266c3ce5ceee9e00b15e22efd721c1469634193b6e515bd6ba0d275",
+   "bytes": 2020
+  },
+  {
+   "path": "golden-freeze.txt",
+   "sha256": "2c18c1bb5c59bc4d030dc02cce3a80749a37247e1173c9c6bd89d81c3331e8fc",
+   "bytes": 2865
+  },
+  {
+   "path": "inputs/ack_bag.wav",
+   "sha256": "911ea1f92b36b712fe7c73286a3ea923fbb404c0cb81010dc764e80c201ad9eb",
+   "bytes": 245838
+  },
+  {
+   "path": "inputs/ack_membership.wav",
+   "sha256": "8edabafb42b8ab91c0b16e2d3f0dcebbf3d82f0c0e0d678c30a23dc40a615738",
+   "bytes": 245838
+  },
+  {
+   "path": "inputs/ack_payment.wav",
+   "sha256": "e03f75a9a565f012f3424725e2059fe88954006e740a5ec822bfd282b0c75de3",
+   "bytes": 284750
+  },
+  {
+   "path": "inputs/ack_price.wav",
+   "sha256": "b57840120fa151dec767127c2da4788a2aa72165d4b01b3be3fd46f3a8df0d30",
+   "bytes": 280654
+  },
+  {
+   "path": "inputs/ack_terminal-failure.wav",
+   "sha256": "92f944277ab267e0b60960af5de0619aa9a8646ab6b719aaae5e553438e22f9d",
+   "bytes": 284750
+  },
+  {
+   "path": "inputs/ayue-original-unbranded-front.png",
+   "sha256": "7447d7e7a3156ce43b8364e2a07a13fb8bb2e263fd4cc64bb8ef05506542a03b",
+   "bytes": 3348597
+  },
+  {
+   "path": "inputs/yue_clerk_01_q_yuu.wav",
+   "sha256": "b0717986daa23d6dcfff9ba621176d61a79901610fe46ed373996487fee9b103",
+   "bytes": 170574
+  },
+  {
+   "path": "inputs/yue_clerk_03_q_price.wav",
+   "sha256": "2573406809c668d29d4d9a54e11ea662bee7490c9e73ef388ffb5e44cf0aaaa5",
+   "bytes": 239694
+  },
+  {
+   "path": "inputs/yue_clerk_05_q_broken.wav",
+   "sha256": "3476c035f15e97bcda4b78d1ec0642aeb77d1d9931cdf52ed525f4a8637cfbfc",
+   "bytes": 557646
+  },
+  {
+   "path": "inputs/yue_clerk_08_q_bagfee.wav",
+   "sha256": "e7fa95ccdac7a1ea0b7f9e4d154a2baa87bbed847a1e4fb3197af5ff3952d596",
+   "bytes": 239694
+  },
+  {
+   "path": "inputs/yue_clerk_10_q_receive.wav",
+   "sha256": "0836102e76fb30d91f27492a41dc86fc6e4770a6ccdaa68147e4c452112980ab",
+   "bytes": 246606
+  },
+  {
+   "path": "inputs/yue_cust_02_a_mou.wav",
+   "sha256": "6006289d00daef687a6525f23e99a6562a86c21363a4926b0e4d0730015f24ec",
+   "bytes": 170574
+  },
+  {
+   "path": "inputs/yue_cust_04_a_octopus.wav",
+   "sha256": "391fe7771b6a62aa128f42bdf4c97a36841243d90b6b0a9a956392b057aeba2e",
+   "bytes": 248910
+  },
+  {
+   "path": "inputs/yue_cust_06_a_cash.wav",
+   "sha256": "ef4b9e6c53e771d6162b08fc51f59926a0ac5a9d9b347a92b7a87f952617adce",
+   "bytes": 193614
+  },
+  {
+   "path": "inputs/yue_cust_07_a_bag.wav",
+   "sha256": "c8220f6b90e92cfc6010324360c7425b345f49ce072607c2515342aadadf06cd",
+   "bytes": 232782
+  },
+  {
+   "path": "inputs/yue_cust_09_a_ok.wav",
+   "sha256": "da8d0929460691871585a2e2497613d931d52012481e00ee1c20afdadcca0e52",
+   "bytes": 170574
+  },
+  {
+   "path": "jobs/sources_src_bag_fb.json",
+   "sha256": "b3b952b1c913dc78a9b926fc0140baf4ad55b3095e68af3fbcd7378243765975",
+   "bytes": 3844
+  },
+  {
+   "path": "jobs/sources_src_bag_listen.json",
+   "sha256": "42ffcb4a6cfa86cfda27383dcb41ea02d05ae36aff37dc2f8e1197a344dd8d95",
+   "bytes": 3977
+  },
+  {
+   "path": "jobs/sources_src_bag_speak.json",
+   "sha256": "aa0f88c04c016128c176fe2615eab0e5512dd6402e98188e3af07940c958d6dd",
+   "bytes": 3893
+  },
+  {
+   "path": "jobs/sources_src_membership_fb.json",
+   "sha256": "6327eeef12da79d3863ca9c26c5257f432daf57abf8e93dfa1ea451b2085f04c",
+   "bytes": 3873
+  },
+  {
+   "path": "jobs/sources_src_membership_listen.json",
+   "sha256": "edee088bb79a843af572c782c54d0c70d9c55f478008f02b90a7c4fa754ef729",
+   "bytes": 3975
+  },
+  {
+   "path": "jobs/sources_src_membership_speak.json",
+   "sha256": "467e415c863a2882bd2a666d3fe3b9faf441a9cfb431b579df1d9bb187e4416d",
+   "bytes": 3912
+  },
+  {
+   "path": "jobs/sources_src_payment_fb.json",
+   "sha256": "1cbb406ca7c55a24c6bba6a44abfb62ecee6e50e7b32d9b4971e926835a48c56",
+   "bytes": 3882
+  },
+  {
+   "path": "jobs/sources_src_payment_speak.json",
+   "sha256": "bc6848fbadbe66d44f026c8ac61d4b520c32b991c31f28a3ee81ac6289409428",
+   "bytes": 3893
+  },
+  {
+   "path": "jobs/sources_src_price_fb.json",
+   "sha256": "5d7f9a5aca40c34ac3bf6877d9ca58203105026cd1635f2a23d122b7a79e9122",
+   "bytes": 3904
+  },
+  {
+   "path": "jobs/sources_src_price_listen.json",
+   "sha256": "7667a55fc1ead6fb54b2b1a79fc61091d5db6792dcff989e0fcf6ef785376f2e",
+   "bytes": 3965
+  },
+  {
+   "path": "jobs/sources_src_price_speak.json",
+   "sha256": "cc7710477500a2cfe524cb225b40a618470900b15f5c6602b920cd1c7ea99eeb",
+   "bytes": 3918
+  },
+  {
+   "path": "jobs/sources_src_terminal-failure_fb.json",
+   "sha256": "3fbad5b6cc33c380c2954af1d9a5c4c6b32335339b4904fd9859958c365e2919",
+   "bytes": 3873
+  },
+  {
+   "path": "jobs/sources_src_terminal-failure_listen.json",
+   "sha256": "8732140a3028d857fa3bcd002062bdedb1feba895ae41c0aee98f3cf238ca06f",
+   "bytes": 4003
+  },
+  {
+   "path": "jobs/sources_src_terminal-failure_speak.json",
+   "sha256": "a79d652d389976591d626e9a77b120be7f527eba6793808d0fc1de97727ab567",
+   "bytes": 3937
+  },
+  {
+   "path": "jobs/teach_line-02.json",
+   "sha256": "d9db00f392d43a3cca35bc3981fd20508d5c9057022f3f769b2a9ddbbe5ec3a6",
+   "bytes": 4676
+  },
+  {
+   "path": "jobs/teach_line-04.json",
+   "sha256": "f837d6455794efb0321ce2d76f35c3edfe8a25878cd1ff952504de7f258c1aca",
+   "bytes": 4680
+  },
+  {
+   "path": "jobs/teach_line-06.json",
+   "sha256": "6b50732f87b1cfe7db6fc8a7da12c3a43b25d780ea42a16c3a9de68a3fdb78c6",
+   "bytes": 4677
+  },
+  {
+   "path": "jobs/teach_line-07.json",
+   "sha256": "52c9fafc0883a15e2358d015f06e6e71e0f78a11dd616e553aa077e3efb20607",
+   "bytes": 4676
+  },
+  {
+   "path": "jobs/teach_line-09.json",
+   "sha256": "dd62654efd94160d9c927d0f943fefde7c13c7be72679f79fa48bf8132510879",
+   "bytes": 4675
+  },
+  {
+   "path": "jobs/v2v_fb_bag.json",
+   "sha256": "648ee69290b1a4cbc325481a13506817b5c0b415cdfb3d15aee1c711ee7eb71c",
+   "bytes": 4910
+  },
+  {
+   "path": "jobs/v2v_fb_membership.json",
+   "sha256": "328a9f013d33c581bcd690f20769add179ea2a969b41a3b7fcca8b5749c4c96c",
+   "bytes": 4953
+  },
+  {
+   "path": "jobs/v2v_fb_payment.json",
+   "sha256": "47384f99f611ff9181fbc055477bb817e96d841c2350defdde30beceaca0cc86",
+   "bytes": 4956
+  },
+  {
+   "path": "jobs/v2v_fb_price.json",
+   "sha256": "49435d02c524b200e5f7632afe1f7fd5d7c02f7b376776d60f8b02156d5a2bea",
+   "bytes": 4974
+  },
+  {
+   "path": "jobs/v2v_fb_terminal-failure.json",
+   "sha256": "6796ef5db4a8aa6b6eb70665352914918d1eebcc6ea6c38d1f1f7f2270fcb260",
+   "bytes": 4965
+  },
+  {
+   "path": "jobs/v2v_speak_bag.json",
+   "sha256": "7847deddcf06a8b73e610d46a930226cec2086dde3f9f2b86bcd05fed6512ec2",
+   "bytes": 4976
+  },
+  {
+   "path": "jobs/v2v_speak_membership.json",
+   "sha256": "25faf6658bc137d2cc4d428c6138e10af1b52b0d9245bafa5725cdf8491beece",
+   "bytes": 4999
+  },
+  {
+   "path": "jobs/v2v_speak_payment.json",
+   "sha256": "45c9a0b0a35218570d7713306ff1e33ee814750d6d74d9a106a80985eeff66fe",
+   "bytes": 4981
+  },
+  {
+   "path": "jobs/v2v_speak_price.json",
+   "sha256": "62df8102e2d3fa3a61f54749bdd20079102f069505309f6a61c74f7f46f402ee",
+   "bytes": 5002
+  },
+  {
+   "path": "jobs/v2v_speak_terminal-failure.json",
+   "sha256": "74b6c7e30d4ead6e355c32015bec10e9ffdd63df9e7ad85d64becfa204d483a9",
+   "bytes": 5034
+  },
+  {
+   "path": "package-spec.json",
+   "sha256": "5eaf1b9d5e518b7309d9b890a345ab416e0aa51aa11a2dc3d6c4df8b0567c17b",
+   "bytes": 6295
+  },
+  {
+   "path": "queue_all.py",
+   "sha256": "03b256d283c8dd81d173d1b4aeb449c592102798f02b73a0640cdd9632562766",
+   "bytes": 1664
+  },
+  {
+   "path": "wait_comfy_ready.py",
+   "sha256": "f30f361c2e6cf6bb07b091d5378a99279c6a6bdaa006986e4618b18f7d1afad0",
+   "bytes": 245
+  },
+  {
+   "path": "weights-manifest.json",
+   "sha256": "0da3343092f1fffb3c675389e13b617558013df5ebd2411e3e82ad45f62e6cd1",
+   "bytes": 1761
+  },
+  {
+   "path": "weights.lock.json",
+   "sha256": "ee4c43a0b65ef5b737f51a42dfbcda9f89d870280caaac4bdea1d4cdaf82e45a",
+   "bytes": 1927
+  }
+ ],
+ "external_bindings": [
+  {
+   "path": "docker/ayue-comfy/Dockerfile",
+   "sha256": "2f8794f088a2138f05f5c557f5de1f3afa6396f63afed0958cf31bc199fd5e38",
+   "bytes": 4081
+  },
+  {
+   "path": "docker/ayue-comfy/golden-freeze.txt",
+   "sha256": "2c18c1bb5c59bc4d030dc02cce3a80749a37247e1173c9c6bd89d81c3331e8fc",
+   "bytes": 2865
+  },
+  {
+   "path": "scripts/validate_jobpack.py",
+   "sha256": "9f66d1a518c10225c1f2a2bdaeb3bb519d3269c0166cfc952dc23886239b2367",
+   "bytes": 8179
+  }
+ ],
+ "launch_command": "gpu-burst ayue-720p-launch --jobpack tasks/ayue-720p-19-jobpack --image docker.io/makoshan/ayue-comfy@sha256:7faa6fef0b2dbe3d45fdf0a350efabf0aae976ac688bc73b7cde95364fa9b274 --confirm-paid",
+ "fingerprint": "eb103ab16b6978225ca9c0da67aa8bbf7bcdac9241f4f8aec0ef2dd72354abdf"
+}

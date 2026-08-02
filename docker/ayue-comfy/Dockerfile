@@ -81,5 +81,10 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
  && rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd
 
 WORKDIR /root/ComfyUI
-EXPOSE 8188
-CMD ["python3", "main.py", "--listen", "127.0.0.1", "--port", "8188"]
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 22 8188
+# 默认跑 sshd（前台）：编排器 SSH 进来后自己起 ComfyUI。
+# 直接跑渲染时覆盖：docker run ... ayue-comfy python3 main.py --listen ...
+CMD ["/usr/local/bin/entrypoint.sh"]

@@ -61,9 +61,25 @@ setup: |
 run: |
   set -euo pipefail
   export PYTHONPATH="${PYTHONPATH:-}"
-  cd /root/ComfyUI && /usr/bin/python3 main.py --listen 127.0.0.1 --port 8188 &
-  cp /job/inputs/* /root/ComfyUI/input/ && python /job/wait_comfy_ready.py
-  # 两阶段：底片(纯I2V) -> V2V 对口型；job JSON 由 /job/queue_all.py 按清单投递并轮询 history
-  python /job/queue_all.py --stage sources && python /job/queue_all.py --stage v2v
-  # 成片 + 日志回传
-  s5cmd --endpoint-url $R2_ENDPOINT cp "/root/ComfyUI/output/*" "s3://$R2_JOBS/ayue-720p-$(date +%Y%m%d)/output/"
+  # 审计确认项：teach 阶段此前从未出现在任何发射路径里，5 支教学片永远不会渲。
+  # 三个阶段顺序不可换：v2v 依赖 sources 的成片，queue_all.py 会做 output→input 搬运。
+  cd /root/ComfyUI && /usr/bin/python3 main.py --listen 127.0.0.1 --port 8188 > /root/comfyui.log 2>&1 &
+  cp /job/inputs/* /root/ComfyUI/input/
+  /usr/bin/python3 /job/wait_comfy_ready.py
+  /usr/bin/python3 /job/queue_all.py --stage sources
+  /usr/bin/python3 /job/queue_all.py --stage v2v
+  /usr/bin/python3 /job/queue_all.py --stage teach
+
+  # 交付闸：29 次执行必须各出一支带音轨成片。审计确认真实文件名是
+  # {prefix}_00001-audio.mp4，同名无后缀的那个是无声中间件——按无后缀名收片
+  # 会拿到 15 支哑巴片，而且抽帧验收看不出来（回归 08-01 已修的「反馈是哑的」）。
+  COUNT=$(ls /root/ComfyUI/output/a720_*-audio.mp4 2>/dev/null | wc -l)
+  SILENT=$(ls /root/ComfyUI/output/a720_*_00001.mp4 2>/dev/null | wc -l)
+  echo "DELIVERY-CHECK: ${COUNT} 支带音轨 / ${SILENT} 支无声中间件"
+
+  # 先回传再判定：不足数也要把已渲成片和日志捞走，别随 --down 一起烧掉
+  s5cmd --endpoint-url $R2_ENDPOINT cp "/root/ComfyUI/output/*" "s3://$R2_JOBS/ayue-720p-$(date +%Y%m%d)/output/" || echo upload-partial-failed
+  s5cmd --endpoint-url $R2_ENDPOINT cp /root/comfyui.log "s3://$R2_JOBS/ayue-720p-$(date +%Y%m%d)/comfyui.log" || true
+
+  test "$COUNT" -ge 29 || { echo "INCOMPLETE: 带音轨成片 ${COUNT}/29" >&2; exit 48; }
+  echo BATCH-COMPLETE

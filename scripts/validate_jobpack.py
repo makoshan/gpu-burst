@@ -181,13 +181,39 @@ def validate(pack: Path, strict_720p: bool) -> list[str]:
     return errors
 
 
+def validate_launch_yaml(pack: Path, yaml_path: Path | None) -> list[str]:
+    """交叉校验发射 YAML 与作业包：审计确认第 1/5/6/10/11/14/15 项全是这一族——
+    YAML 引用包里没有的脚本、或投递包里不存在的 stage（空 glob 静默假成功）。"""
+    if yaml_path is None or not yaml_path.exists():
+        return [f"发射 YAML 不存在，无法交叉校验: {yaml_path}"]
+    text = yaml_path.read_text(encoding="utf-8")
+    errs: list[str] = []
+
+    for script in sorted(set(re.findall(r"/job/([\w./-]+\.(?:py|sh))", text))):
+        if not (pack / script).exists():
+            errs.append(f"YAML 引用 /job/{script}，但作业包里没有这个文件")
+
+    yaml_stages = set(re.findall(r"--stage\s+(\w+)", text))
+    pack_stages = {f.name.split("_", 1)[0] for f in (pack / "jobs").glob("*.json")}
+    for st in sorted(yaml_stages - pack_stages):
+        errs.append(f"YAML 投递 --stage {st}，但 jobs/ 里没有 {st}_*.json（空 glob 会静默假成功）")
+    for st in sorted(pack_stages - yaml_stages):
+        n = len(list((pack / "jobs").glob(f"{st}_*.json")))
+        errs.append(f"jobs/ 有 {n} 个 {st}_*.json，但 YAML 从不投递 --stage {st}（这些作业永远不会渲）")
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("pack", type=Path)
     ap.add_argument("--strict-720p", action="store_true")
+    ap.add_argument("--launch-yaml", type=Path, default=None,
+                    help="交叉校验发射 YAML 的 stage 与脚本引用")
     a = ap.parse_args()
 
     errors = validate(a.pack, a.strict_720p)
+    if a.launch_yaml is not None:
+        errors.extend(validate_launch_yaml(a.pack, a.launch_yaml))
     jobs = len(list((a.pack / "jobs").glob("*.json")))
     if errors:
         print(f"✗ {a.pack.name}: {jobs} 个作业，发现 {len(errors)} 处问题：")

@@ -1,12 +1,12 @@
 {
  "status": "approved",
- "package_fingerprint": "9f1be67f76fa52f44cee0bffd6aefe147e0a71d2dabb3470c599027f64bdb9da",
+ "package_fingerprint": "1ec0e6231e08e84de63ef6b4b9bd7bd550d6e7e938c48fb98de9029d2188eee3",
  "provider": "runpod",
- "image_ref": "docker.io/makoshan/ayue-comfy@sha256:7faa6fef0b2dbe3d45fdf0a350efabf0aae976ac688bc73b7cde95364fa9b274",
- "launch_contract_sha256": "7d5a2386680dab53e43a08d4f1e59ac6e41c40fe6d718116deaf0dffc488264b",
+ "image_ref": "docker.io/makoshan/ayue-comfy@sha256:f871687dac2db0cee7e436377653ca910dbbcbd738df6de8a7966eb715ce87f3",
+ "launch_contract_sha256": "ddef2f629385d75caee685d2d7eb19d2b24f7f795cf7346b230e31327858b996",
  "approved_by": "makoshan (用户在会话中口头批准，2026-08-02)",
  "approved_at": "2026-08-02",
- "note": "批准范围：19 交付物 / 29 执行 / 720x1280@25，绑定镜像 digest 与包指纹；任一项变动此审批自动失效",
+ "note": "批准范围：19交付物/29执行/720x1280@25；镜像已含 sshd+rsync（SkyPilot 必需）",
  "launch_allowed": true,
  "max_hourly_cost_usd": 0.75
 }

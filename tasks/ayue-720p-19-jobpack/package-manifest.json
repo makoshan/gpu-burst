@@ -264,8 +264,8 @@
  "external_bindings": [
   {
    "path": "docker/ayue-comfy/Dockerfile",
-   "sha256": "2f8794f088a2138f05f5c557f5de1f3afa6396f63afed0958cf31bc199fd5e38",
-   "bytes": 4081
+   "sha256": "72653123a8bb033fd31d2d0cbc8542566711cc0ce458ce623e56ad0e806c5f63",
+   "bytes": 4605
   },
   {
    "path": "docker/ayue-comfy/golden-freeze.txt",
@@ -278,6 +278,6 @@
    "bytes": 8179
   }
  ],
- "launch_command": "gpu-burst ayue-720p-launch --jobpack tasks/ayue-720p-19-jobpack --image docker.io/makoshan/ayue-comfy@sha256:7faa6fef0b2dbe3d45fdf0a350efabf0aae976ac688bc73b7cde95364fa9b274 --confirm-paid",
- "fingerprint": "9f1be67f76fa52f44cee0bffd6aefe147e0a71d2dabb3470c599027f64bdb9da"
+ "launch_command": "gpu-burst ayue-720p-launch --jobpack tasks/ayue-720p-19-jobpack --image docker.io/makoshan/ayue-comfy@sha256:f871687dac2db0cee7e436377653ca910dbbcbd738df6de8a7966eb715ce87f3 --confirm-paid",
+ "fingerprint": "1ec0e6231e08e84de63ef6b4b9bd7bd550d6e7e938c48fb98de9029d2188eee3"
 }

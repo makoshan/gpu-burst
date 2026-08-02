@@ -72,6 +72,14 @@ subprocess.run(["s5cmd", "version"], check=False, capture_output=True)
 print("BUILD-SELFTEST-PASS")
 PY
 
+# SkyPilot 在 RunPod 上必须 SSH 进 Pod 安装运行时、用 rsync 同步 file_mounts；
+# 官方模板内置这两样，自定义镜像必须自带（2026-08-02 实测：缺 sshd →
+# SSH 600s 超时 → 集群永远 INIT，Pod 空烧 40 分钟）。
+# 刻意放在最后一层：不动前面的 pip 大层，重建缓存命中、推送只传这一小层。
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+      openssh-server rsync \
+ && rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd
+
 WORKDIR /root/ComfyUI
 EXPOSE 8188
 CMD ["python3", "main.py", "--listen", "127.0.0.1", "--port", "8188"]

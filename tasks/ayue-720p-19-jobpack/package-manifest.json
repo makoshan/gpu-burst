@@ -237,7 +237,7 @@
   },
   {
    "path": "package-spec.json",
-   "sha256": "5eaf1b9d5e518b7309d9b890a345ab416e0aa51aa11a2dc3d6c4df8b0567c17b",
+   "sha256": "e219f4b89196661e2971fd1f5aba343a4874d45f6063443aee18234650e6de73",
    "bytes": 6295
   },
   {
@@ -279,5 +279,5 @@
   }
  ],
  "launch_command": "gpu-burst ayue-720p-launch --jobpack tasks/ayue-720p-19-jobpack --image docker.io/makoshan/ayue-comfy@sha256:7faa6fef0b2dbe3d45fdf0a350efabf0aae976ac688bc73b7cde95364fa9b274 --confirm-paid",
- "fingerprint": "eb103ab16b6978225ca9c0da67aa8bbf7bcdac9241f4f8aec0ef2dd72354abdf"
+ "fingerprint": "9f1be67f76fa52f44cee0bffd6aefe147e0a71d2dabb3470c599027f64bdb9da"
 }

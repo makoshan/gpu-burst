@@ -251,7 +251,7 @@
   }
  ],
  "approval": {
-  "status": "pending",
-  "launch_allowed": false
+  "status": "approved",
+  "launch_allowed": true
  }
 }

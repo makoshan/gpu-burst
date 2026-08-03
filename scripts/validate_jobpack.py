@@ -189,6 +189,14 @@ def validate_launch_yaml(pack: Path, yaml_path: Path | None) -> list[str]:
     text = yaml_path.read_text(encoding="utf-8")
     errs: list[str] = []
 
+    # 挂载一致性：/job 指向的必须就是被校验的这个包。
+    # 2026-08-03 实测踩坑：校验 19 包、YAML 却还挂着旧 30 包，白烧一台机。
+    m = re.search(r"/job:\s*(\S+)", text)
+    if m:
+        mounted = Path(m.group(1).lstrip("./"))
+        if mounted.name != pack.resolve().name:
+            errs.append(f"YAML 把 /job 挂到 '{m.group(1)}'，但校验的是 '{pack.name}'——发射的不是你校验的包")
+
     for script in sorted(set(re.findall(r"/job/([\w./-]+\.(?:py|sh))", text))):
         if not (pack / script).exists():
             errs.append(f"YAML 引用 /job/{script}，但作业包里没有这个文件")

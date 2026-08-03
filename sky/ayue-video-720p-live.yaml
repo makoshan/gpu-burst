@@ -29,7 +29,7 @@ envs:
 
 file_mounts:
   # 任务包：job JSON（720x1280 版工作流）+ 源音频 + 母版图
-  /job: ./tasks/ayue-720p-jobpack
+  /job: ./tasks/ayue-720p-19-jobpack
   # R2 凭证走 file_mounts，不要用「后台 launch + ssh 注入」——那个包装层会让
   # sky launch 提前退出，--down 随即拆机（2026-08-01 整批首发就这么废了一次）。
   /root/.aws/credentials: ~/.config/gpu-burst/r2-credentials
@@ -52,7 +52,7 @@ setup: |
   git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
   # ---- 黄金 freeze 精确重放：thursday-win 生产环境（每天在跑这条管线）的 pip freeze，
   #      不是滚动 requirements。cu130 轮子从 pytorch 官方 index 拉。----
-  $PIP install --ignore-installed -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
+  $PIP install -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
   $PIP install s5cmd huggingface_hub[hf_transfer]
   # 权重：R2-first（已全量缓存），HF 兜底
   bash /job/fetch_weights.sh

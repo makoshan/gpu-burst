@@ -46,6 +46,10 @@ setup: |
   # （av==18.0.0 等直接拒装，2026-08-03 实测）。先建 3.12 环境再精确重放。
   /root/miniconda3/bin/conda create -y -q -n ayue python=3.12
   PY=/root/miniconda3/envs/ayue/bin/python; PIP="$PY -m pip"
+  # env 的 bin 必须进 PATH：fetch_weights.sh 里的 s5cmd/hf 是裸命令，
+  # 不进 PATH 时 s5cmd 的 R2 分支被 2>/dev/null 吞掉静默漏到 HF，
+  # hf 则直接 127（2026-08-03 实测）。
+  export PATH=/root/miniconda3/envs/ayue/bin:$PATH
   $PY --version
   git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
   git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
@@ -63,6 +67,7 @@ run: |
   export PYTHONPATH="${PYTHONPATH:-}"
   # 审计确认项：teach 阶段此前从未出现在任何发射路径里，5 支教学片永远不会渲。
   # 三个阶段顺序不可换：v2v 依赖 sources 的成片，queue_all.py 会做 output→input 搬运。
+  export PATH=/root/miniconda3/envs/ayue/bin:$PATH
   cd /root/ComfyUI && /root/miniconda3/envs/ayue/bin/python main.py --listen 127.0.0.1 --port 8188 > /root/comfyui.log 2>&1 &
   cp /job/inputs/* /root/ComfyUI/input/
   /root/miniconda3/envs/ayue/bin/python /job/wait_comfy_ready.py

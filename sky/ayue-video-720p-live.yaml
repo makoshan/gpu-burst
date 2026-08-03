@@ -42,9 +42,10 @@ setup: |
   DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | cut -d. -f1)
   [ "$DRV" -ge 580 ] || { echo "DRIVER-TOO-OLD: $DRV < 580 (need CUDA 13)"; exit 47; }
   echo "driver ok: $DRV"
-  # Vast/SkyPilot 默认镜像：python 在 miniconda（8/1 A/B 样片实测路径）。
-  # --ignore-installed 防 conda 装的包无 RECORD 卸不掉（PyJWT 实测卡死过一轮）。
-  PY=/root/miniconda3/bin/python; PIP="$PY -m pip"
+  # Vast 默认镜像的 conda 是 python 3.10，黄金 freeze 需要 >=3.12
+  # （av==18.0.0 等直接拒装，2026-08-03 实测）。先建 3.12 环境再精确重放。
+  /root/miniconda3/bin/conda create -y -q -n ayue python=3.12
+  PY=/root/miniconda3/envs/ayue/bin/python; PIP="$PY -m pip"
   $PY --version
   git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
   git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
@@ -62,12 +63,12 @@ run: |
   export PYTHONPATH="${PYTHONPATH:-}"
   # 审计确认项：teach 阶段此前从未出现在任何发射路径里，5 支教学片永远不会渲。
   # 三个阶段顺序不可换：v2v 依赖 sources 的成片，queue_all.py 会做 output→input 搬运。
-  cd /root/ComfyUI && /root/miniconda3/bin/python main.py --listen 127.0.0.1 --port 8188 > /root/comfyui.log 2>&1 &
+  cd /root/ComfyUI && /root/miniconda3/envs/ayue/bin/python main.py --listen 127.0.0.1 --port 8188 > /root/comfyui.log 2>&1 &
   cp /job/inputs/* /root/ComfyUI/input/
-  /root/miniconda3/bin/python /job/wait_comfy_ready.py
-  /root/miniconda3/bin/python /job/queue_all.py --stage sources
-  /root/miniconda3/bin/python /job/queue_all.py --stage v2v
-  /root/miniconda3/bin/python /job/queue_all.py --stage teach
+  /root/miniconda3/envs/ayue/bin/python /job/wait_comfy_ready.py
+  /root/miniconda3/envs/ayue/bin/python /job/queue_all.py --stage sources
+  /root/miniconda3/envs/ayue/bin/python /job/queue_all.py --stage v2v
+  /root/miniconda3/envs/ayue/bin/python /job/queue_all.py --stage teach
 
   # 交付闸：29 次执行必须各出一支带音轨成片。审计确认真实文件名是
   # {prefix}_00001-audio.mp4，同名无后缀的那个是无声中间件——按无后缀名收片

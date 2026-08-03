@@ -16,10 +16,11 @@
 #   sky launch -c ayue-720p sky/ayue-video-720p.yaml --idle-minutes-to-autostop 10 --down -y
 
 resources:
-  cloud: runpod
+  cloud: vast
   accelerators: RTX4090:1     # 24GB：720P fp8 主模型 17GB + 激活
   disk_size: 80               # 权重 ~30GB + ComfyUI + 输出
-  image_id: docker:pytorch/pytorch:2.13.0-cuda13.0-cudnn9-runtime
+  # 不指定 image：用 SkyPilot 默认镜像（8/1 的 A/B 样片就是这么渲出来的，
+  # miniconda 路径已实测）。预烤镜像的 CMD/sshd 机制未吃透前不引入。
 
 envs:
   R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
@@ -41,11 +42,9 @@ setup: |
   DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | cut -d. -f1)
   [ "$DRV" -ge 580 ] || { echo "DRIVER-TOO-OLD: $DRV < 580 (need CUDA 13)"; exit 47; }
   echo "driver ok: $DRV"
-  # RunPod pytorch 官方镜像：torch 2.13+cu130 就在系统 python3 里（无 conda）；
-  # PEP668 保护要 --break-system-packages；debian 装的包没 RECORD 文件，
-  # freeze 盖装要 --ignore-installed（PyJWT 实测卡死过一轮）。
-  PY=/usr/bin/python3; PIP="$PY -m pip"
-  apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1 || true
+  # Vast/SkyPilot 默认镜像：python 在 miniconda（8/1 A/B 样片实测路径）。
+  # --ignore-installed 防 conda 装的包无 RECORD 卸不掉（PyJWT 实测卡死过一轮）。
+  PY=/root/miniconda3/bin/python; PIP="$PY -m pip"
   $PY --version
   git clone https://github.com/comfyanonymous/ComfyUI /root/ComfyUI && git -C /root/ComfyUI checkout b3581971
   git clone https://github.com/kijai/ComfyUI-WanVideoWrapper /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git -C /root/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper checkout 088128b
@@ -53,8 +52,8 @@ setup: |
   git clone https://github.com/kijai/ComfyUI-KJNodes /root/ComfyUI/custom_nodes/ComfyUI-KJNodes
   # ---- 黄金 freeze 精确重放：thursday-win 生产环境（每天在跑这条管线）的 pip freeze，
   #      不是滚动 requirements。cu130 轮子从 pytorch 官方 index 拉。----
-  $PIP install --break-system-packages --ignore-installed -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
-  $PIP install --break-system-packages s5cmd huggingface_hub[hf_transfer]
+  $PIP install --ignore-installed -r /job/golden-freeze.txt --extra-index-url https://download.pytorch.org/whl/cu130
+  $PIP install s5cmd huggingface_hub[hf_transfer]
   # 权重：R2-first（已全量缓存），HF 兜底
   bash /job/fetch_weights.sh
 
@@ -63,12 +62,12 @@ run: |
   export PYTHONPATH="${PYTHONPATH:-}"
   # 审计确认项：teach 阶段此前从未出现在任何发射路径里，5 支教学片永远不会渲。
   # 三个阶段顺序不可换：v2v 依赖 sources 的成片，queue_all.py 会做 output→input 搬运。
-  cd /root/ComfyUI && /usr/bin/python3 main.py --listen 127.0.0.1 --port 8188 > /root/comfyui.log 2>&1 &
+  cd /root/ComfyUI && /root/miniconda3/bin/python main.py --listen 127.0.0.1 --port 8188 > /root/comfyui.log 2>&1 &
   cp /job/inputs/* /root/ComfyUI/input/
-  /usr/bin/python3 /job/wait_comfy_ready.py
-  /usr/bin/python3 /job/queue_all.py --stage sources
-  /usr/bin/python3 /job/queue_all.py --stage v2v
-  /usr/bin/python3 /job/queue_all.py --stage teach
+  /root/miniconda3/bin/python /job/wait_comfy_ready.py
+  /root/miniconda3/bin/python /job/queue_all.py --stage sources
+  /root/miniconda3/bin/python /job/queue_all.py --stage v2v
+  /root/miniconda3/bin/python /job/queue_all.py --stage teach
 
   # 交付闸：29 次执行必须各出一支带音轨成片。审计确认真实文件名是
   # {prefix}_00001-audio.mp4，同名无后缀的那个是无声中间件——按无后缀名收片

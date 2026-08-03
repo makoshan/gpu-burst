@@ -13,6 +13,12 @@ for attempt in 1 2 3 4 5; do
   verdict=""
   for i in $(seq 1 30); do
     sleep 60
+    # SSH 运行时装不上（Vast 迟交付宿主机 sshd 不起）也是可重试失败——
+    # 提前从 provision 日志识别，别等 30 分钟无结论（2026-08-03 两台白等）
+    PL=$(ls -dt ~/sky_logs/sky-* 2>/dev/null | head -1)
+    if [ -n "$PL" ] && grep -q "Failed to SSH to .* after timeout" "$PL/provision.log" 2>/dev/null; then
+      verdict=sshfail; break
+    fi
     J=$(uv run sky queue $C 2>/dev/null | grep -oE "SETTING_UP|RUNNING|SUCCEEDED|FAILED_SETUP|FAILED" | head -1)
     echo "[$(date +%H:%M)] attempt $attempt poll: job=${J:-unknown}"
     case "$J" in
@@ -28,6 +34,7 @@ for attempt in 1 2 3 4 5; do
   case "$verdict" in
     good)  echo "[$(date +%H:%M)] 门禁通过，渲染进行中"; exit 0;;
     gate)  echo "[$(date +%H:%M)] 驱动太老，换机"; uv run sky down $C -y >/dev/null 2>&1;;
+    sshfail) echo "[$(date +%H:%M)] 宿主机 sshd 不起（迟交付机），换机"; uv run sky down $C -y >/dev/null 2>&1;;
     other) echo "[$(date +%H:%M)] 非门禁失败，停下人工看"; exit 3;;
     *)     echo "[$(date +%H:%M)] 30分钟无结论，停下人工看"; exit 4;;
   esac

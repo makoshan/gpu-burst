@@ -23,6 +23,7 @@ resources:
   # miniconda 路径已实测）。预烤镜像的 CMD/sshd 机制未吃透前不引入。
 
 envs:
+  AYUE_FIRST_CLIP_BUDGET_S: "840"   # 速度闸门：首支超 14min 即弃机（快卡 ~7min）
   R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
   R2_CACHE: gpu-burst-cache
   R2_JOBS: gpu-burst-jobs

@@ -28,11 +28,22 @@ for f in sorted(glob.glob(f"/job/jobs/{stage}_*.json")):
 # 并退出 0——审计确认这正是 --stage finals 导致 15/19 支不渲却全绿的机制。
 assert ids, f"stage {stage}: /job/jobs/{stage}_*.json 匹配到 0 个作业文件"
 started = time.time()
+first_done_at = None
+# 速度闸门（2026-08-04 教训：慢卡通过全部正确性检查后安静烧了 $7——
+# 720P 单支 26 分钟 vs 预期 6 分钟，10 小时只出 14/29）。
+# 首支成片耗时超预算即退出码 49，编排层视为「换机重试」类。
+SPEED_BUDGET_S = int(__import__("os").environ.get("AYUE_FIRST_CLIP_BUDGET_S", "0"))
 while True:
     if time.time() - started > WALL_CLOCK_LIMIT_S:
         raise SystemExit(f"stage {stage}: 超过墙钟上限 {WALL_CLOCK_LIMIT_S}s，中止以免无上限计费")
     hist = {i: json.load(urllib.request.urlopen(f"{BASE}/history/{i}", timeout=30)) for i in ids}
     done = [i for i in ids if hist[i]]
+    if done and first_done_at is None:
+        first_done_at = time.time()
+        elapsed = first_done_at - started
+        print(f"首支成片耗时 {elapsed:.0f}s (预算 {SPEED_BUDGET_S or '未设'}s)", flush=True)
+        if SPEED_BUDGET_S and elapsed > SPEED_BUDGET_S:
+            raise SystemExit(f"SLOW-HOST: 首支 {elapsed:.0f}s > 预算 {SPEED_BUDGET_S}s，弃机换台快的 (exit 49)")
     print(f"{time.strftime('%H:%M:%S')} {len(done)}/{len(ids)} done", flush=True)
     if len(done) == len(ids):
         for i in ids:

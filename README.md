@@ -14,7 +14,11 @@
 
 ## 文档
 
-当前仓库处于**Phase 1 本地骨架已实现、云端付费闭环尚未完成验证**阶段。Ayue 720P 已新增 RunPod 控制面，但正确的 19 支包仍因镜像 digest、权重锁和人工审批未齐而拒绝付费发射；详见 [Ayue RunPod 操作与门禁](docs/ayue-runpod.md)。README 用于快速理解方向，详细契约以以下文档为准：
+当前仓库处于**付费发射已跑通、Ayue 720P 19 支包尚未交付完成**阶段（状态截至 2026-08-04）。人工审批已签字、门禁全绿（`paid_launch_allowed=true`），后端从 RunPod 切回 Vast，实际付费发射已执行 10 次以上。发射链路上的阻塞逐个清掉了：镜像补 sshd+rsync、驱动门禁自动换机、sshfail 判定、Vast conda py3.10 建不了黄金 freeze（改为先建 3.12 env）、conda env bin 未进 PATH。
+
+**最大的坑是境内→Vast 的 SSH 被墙**，误诊为坏宿主机烧掉 5 台，实际机器全是好的——唯一活路是美国跳板 + SSH 连接复用 + 两个 SkyPilot 补丁，完整诊断链见 [境内→Vast SSH 跳板方案](docs/vast-ssh-jump.md)（`uv tool` 重装后必须重跑 `patches/apply_skypilot_vast_ssh_patches.sh`）。
+
+剩余阻塞是**宿主机质量**：环境能装、SSH 能通，但租到慢机器时出片速度不达标，已加速度闸门（首支成片超预算 `exit 49` 弃机换台）。RunPod 控制面见 [Ayue RunPod 操作与门禁](docs/ayue-runpod.md)。README 用于快速理解方向，详细契约以以下文档为准：
 
 - [产品文档](docs/product.md)：用户、范围、MVP 验收门槛、指标和路线图
 - [技术文档](docs/technical.md)：架构、任务协议、状态机、数据隔离、成本和测试策略
@@ -36,7 +40,7 @@ CLI 为底，Skill 为壳。底层是不依赖 Claude 的普通命令（可进 c
 gpu-burst run song-cards --dry-run tasks/song-cards.example.json
 ```
 
-已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run` / `configure-runpod` / `ayue-720p-plan` / `ayue-720p-launch`。RunPod 路径在渲染前先起 bootstrap Pod 并核验观测单价，渲染结束后用 RunPod API 复核销毁并在残留时升级 DELETE；真实付费闭环尚未执行。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
+已实现本地子命令：`doctor` / `quote`（本地 fake-cloud 估算）/ `run --dry-run` / `status` / `logs` / `cancel`（只记录本地取消事件）/ `hello-world` / `watchdog --dry-run` / `configure-runpod` / `ayue-720p-plan` / `ayue-720p-launch`。RunPod 路径在渲染前先起 bootstrap Pod 并核验观测单价，渲染结束后用 RunPod API 复核销毁并在残留时升级 DELETE。真实付费发射已执行（Vast 后端），发射循环带驱动门禁、sshfail 判定和速度闸门，不合格自动弃机换台。所有付费入口必须同时满足 `--confirm-paid`、`GPU_BURST_LIVE=1` 和 `doctor` ready。
 
 本地验证：
 
@@ -48,7 +52,7 @@ uv run gpu-burst hello-world --dry-run
 uv run gpu-burst watchdog --dry-run
 ```
 
-Ayue 720P 的旧 Vast/30-job 入口已禁用。RunPod 免费预检通过 `sky/launch-ayue-720p-runpod.sh` 调用，并且必须显式给出正确 19 支包与不可变镜像 digest。
+Ayue 720P 的旧 Vast/30-job 入口已禁用。当前 live 发射走 Vast（`sky/ayue-video-720p-live.yaml`，2026-08-01 实测组合），RunPod 免费预检保留在 `sky/launch-ayue-720p-runpod.sh`；两条路径都必须显式给出正确 19 支包与不可变镜像 digest。
 
 云端目标行为：**比价租机 → 从 R2 拉权重/输入 → 跑任务 → 回传结果 → 销毁机器 → 记账**
 

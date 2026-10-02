@@ -1,0 +1,42 @@
+# Neural Interfaces 2026 Track 4 (EMG-to-Pose): 一次性数据准备。
+# 从 NEMAR / S3 下 emg2pose 原始数据(约 310 GB) -> fp16 memmap(约 224 GB) -> R2。
+# 之后的训练机只从 R2 拉 memmap,不再碰原始数据,也不占家里带宽。
+# 发射: sky/launch-nc26-dataprep.sh (注入 R2 凭据; 空闲 45 分钟后云机侧自毁)
+# 脚本与校验见 tasks/nc26/ (与 vibe-hw 仓 docs/neural-interfaces26/train 同源)。
+name: nc26-dataprep
+
+resources:
+  cloud: vast
+  accelerators: {RTX3060:1, V100:1, RTX3090:1, RTX4090:1, RTX4060:1, RTX4070:1, RTX5090:1}      # 这一步不用 GPU,只是 Vast 上都是 GPU 机;要的是盘、核数和网速
+  cpus: 16+
+  disk_size: 650               # 原始 310 GB + memmap 224 GB + 余量
+  use_spot: false
+  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+
+envs:
+  TASK_ID: nc26-emgpose
+  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
+
+file_mounts:
+  /tmp/r2-common.sh: sky/lib/r2-common.sh
+  ~/neural-compet26/code: tasks/nc26
+
+setup: |
+  set -euo pipefail
+  source /tmp/r2-common.sh
+  ensure_s5cmd
+  (command -v git && command -v rsync && command -v curl) >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq git rsync curl)
+  pip install -q uv
+  [ -d ~/nc26env ] || uv venv -q -p 3.12 ~/nc26env
+  # 与本地 / Spark 上验证过的版本一致
+  VIRTUAL_ENV=~/nc26env uv pip install -q neuralset==0.3.1 neuralfetch==0.3.1 exca==0.5.29 eegdash==0.9.1 mne mne-bids pandas numpy torch
+  ~/nc26env/bin/python -c "import neuralfetch, eegdash, mne, torch; print('env ok', eegdash.__version__, mne.__version__)"
+
+run: |
+  set -uo pipefail
+  source /tmp/r2-common.sh
+  bash ~/neural-compet26/code/dataprep.sh 2>&1 | tee ~/dataprep.log
+  rc=${PIPESTATUS[0]}
+  r2_push ~/dataprep.log "s3://gpu-burst-jobs/$TASK_ID/output/dataprep.log" || true
+  echo "NC26_DATAPREP_RC=$rc"
+  exit $rc

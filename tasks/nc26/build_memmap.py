@@ -47,6 +47,13 @@ def load(tl):
     raw = study()._load_raw(tl)
     emg = raw.get_data(picks="emg").T * 1e6            # (T, 16) microvolts
     joints = raw.get_data(picks="misc").T               # (T, 20) radians
+    # 公开库 2026-09-29 把关节通道的单位标签从 uV 改成 rad，文件里的数没变（仍是微弧度）。
+    # MNE 只在标签是 uV 时才乘 1e-6，新版文件读出来会大一百万倍；按量级判断，不依赖标签。
+    m = np.nanmax(np.abs(joints)) if np.isfinite(joints).any() else 0.0
+    if m > 100:
+        joints = joints * 1e-6
+        m *= 1e-6
+    assert m < 10, f"joint angles out of range: {m} rad"
     assert emg.shape[1] == 16 and joints.shape[1] == 20, (emg.shape, joints.shape)
     return emg, joints
 

@@ -2,6 +2,27 @@
 
 个人 AI 算力基础设施：批处理、训练、大规模音频处理，按需租云 GPU，跑完销毁，本地 5070 Ti 兜底。
 
+## 首选后端：Google Cloud（GCP）
+
+2026-10 起训练类任务**优先走 GCP**，Vast / RunPod 退为备选。原因：境内连 Vast 要绕美国跳板（见下文），GCP 走 `gcloud` 直连；数据放同区 GCS 免流量费；竞价机可设硬时限，到点由 GCP 自己删机。
+
+| 脚本 | 做什么 | 机型 |
+|---|---|---|
+| [`gcp/launch-nc26-g4.sh`](gcp/launch-nc26-g4.sh) | 训练：数据准备 + 多组对照并行，支持 `RESUME`（断点换机续跑） | `g4-standard-48` 竞价（RTX PRO 6000，48 核） |
+| [`gcp/launch-nc26-scene.sh`](gcp/launch-nc26-scene.sh) | 场景微调 + 分组评分 | 同上 |
+| [`gcp/launch-nc26-dataprep.sh`](gcp/launch-nc26-dataprep.sh) | 只做数据准备，不用 GPU | `n2-standard-16` 竞价 |
+
+```bash
+gcp/launch-nc26-g4.sh                                   # 默认 dry-run，只打印计划
+GPU_BURST_LIVE=1 gcp/launch-nc26-g4.sh --confirm-paid   # 真开机（付费）
+gcp/launch-nc26-g4.sh status | pull | down              # 看进度 / 拉结果 / 删机并核对没有残留
+```
+
+- 别人用：先 `gcloud auth login`，再用环境变量换成自己的项目和桶：`GCP_PROJECT=<项目> BUCKET=gs://<桶>`。默认值是作者自己的项目，没有权限会直接失败。
+- 保险丝：竞价机 + `--max-run-duration`（G4 默认 5 小时），被收回或到点都删机；结果每 10 分钟同步到 GCS。
+- 建机时必须带 `--scopes storage-rw`，否则写不了 GCS（竞价机停了不一定开得回来）。
+- 实测数字和踩坑记录见 [GCP 和 Vast 实测经验](docs/gcp-nc26.md)。
+
 ## 定位
 
 方言保育项目的算力底座——当前阶段只定位为**待验证的 song-cards 批处理器**；故障销毁、账单、数据隔离实测通过后，再晋升为统一底座（OCR、配音、采访入库、训练）。
@@ -20,6 +41,7 @@
 
 剩余阻塞是**宿主机质量**：环境能装、SSH 能通，但租到慢机器时出片速度不达标，已加速度闸门（首支成片超预算 `exit 49` 弃机换台）。RunPod 控制面见 [Ayue RunPod 操作与门禁](docs/ayue-runpod.md)。README 用于快速理解方向，详细契约以以下文档为准：
 
+- [GCP 和 Vast 实测经验](docs/gcp-nc26.md)：nc26 数据准备两条路的实测数字、踩坑、数据放哪
 - [产品文档](docs/product.md)：用户、范围、MVP 验收门槛、指标和路线图
 - [技术文档](docs/technical.md)：架构、任务协议、状态机、数据隔离、成本和测试策略
 - [文档实施计划](docs/superpowers/plans/2026-07-10-product-technical-docs.md)：本轮文档工作的范围和验证清单

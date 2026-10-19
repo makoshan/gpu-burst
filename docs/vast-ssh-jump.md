@@ -44,7 +44,7 @@
 
 ```yaml
 vast:
-  ssh_proxy_command: /usr/bin/ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/skyjump-%r@%h-%p -o ControlPersist=15m -p 2299 -W %h:%p mako@100.122.117.40
+  ssh_proxy_command: /usr/bin/ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/skyjump-%r@%h-%p -o ControlPersist=15m -p 2299 -W %h:%p <用户>@<美国跳板机地址>
 ```
 
 **ControlMaster 复用不是锦上添花，是必需**：SkyPilot 投递作业时并发开大量 SSH，

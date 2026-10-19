@@ -175,8 +175,18 @@ def envelope(x, n_frames, hop=50):
 
 class EMGFormerS(nn.Module):
     def __init__(self, n_chans=16, n_joints=20, d=256, heads=4, layers=3, ffn=512,
-                 dropout=0.1, chan_stride=1, env=False, n_protos=0):
+                 dropout=0.1, chan_stride=1, env=False, n_protos=0, ddiff=False, out_scale=1.0):
         super().__init__()
+        # out_scale：关节头输出乘固定标量 s（arXiv 2603.08212 的 o_t = s·g(h_t)，训练时超参，不是事后放大）。
+        # 默认 1 时不建缓冲区，旧权重不受影响；≠1 时存进 state_dict，提交包加载时据此恢复。
+        self.out_scale = float(out_scale)
+        if self.out_scale != 1.0:
+            self.register_buffer("out_scale_buf", torch.tensor(self.out_scale))
+        # ddiff：沿腕带环做相邻通道再差分（双差分），(x_c - x_{c-1})/√2；固定线性空间滤波，默认关。
+        # 开时存一个缓冲区当标记，提交包加载时据此自动开启。
+        self.ddiff = ddiff
+        if ddiff:
+            self.register_buffer("ddiff_on", torch.ones(()))
         # chan_stride=2 keeps every other electrode: emulates an 8-channel band.
         self.chan_stride, self.n_in = chan_stride, n_chans // chan_stride
         self.featurizer = TdsSlim16(self.n_in)
@@ -213,6 +223,8 @@ class EMGFormerS(nn.Module):
         T = X.shape[-1]
         if X.shape[1] != self.n_in:             # full 16-ch input: keep evens
             X = X[:, ::self.chan_stride]
+        if self.ddiff:
+            X = (X - X.roll(1, 1)) * 0.7071067811865476
         Xs = X * self.x_scale
         h = self.featurizer(F.pad(Xs, (self.featurizer.left_context, 0))).transpose(1, 2)  # (B, T_feat, 256) at 40 Hz
         if self.env:
@@ -221,6 +233,8 @@ class EMGFormerS(nn.Module):
             h = layer(h)
         h = self.output_proj(h)
         out = self.head(h).float()
+        if self.out_scale != 1.0:
+            out = out * self.out_scale_buf
         if self.n_protos:
             self.logits = self.proto_head(h).float()
             w = torch.softmax(self.logits / self.proto_temp, -1)

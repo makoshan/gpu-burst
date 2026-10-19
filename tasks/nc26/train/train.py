@@ -49,10 +49,16 @@ ap.add_argument("--sched", choices=["cosine", "wsd"], default="cosine")
 ap.add_argument("--decay-epochs", type=int, default=0, help="wsd: linear decay over the last K epochs")
 ap.add_argument("--save-at", default="", help="comma list of epochs to checkpoint net+optimizer")
 ap.add_argument("--resume", default="", help="checkpoint from --save-at; continues after its epoch")
+ap.add_argument("--stages", default="", help="comma list: keep only these movement stages for training")
 ap.add_argument("--init", default="", help="start from these weights (fine-tune); schedule starts at epoch 1")
 ap.add_argument("--eval-every", type=int, default=1, help="decay epochs are always scored")
 ap.add_argument("--vel-weight", type=float, default=0.0,
                 help="extra L1 on 50 Hz first differences of the angles (velocity), weight w")
+ap.add_argument("--arch", default="emgformer", help="emgformer | cbramod（cbramod_emg.py）| bd:biot / bd:labram（braindecode 预训练脑电模型，bd_emg.py；加 --bd-scratch 不装权重）")
+ap.add_argument("--bd-scratch", action="store_true", help="bd:* 时不装预训练权重，从零训练")
+ap.add_argument("--init-eeg", default="", help="--arch cbramod 时装 CBraMod 官方 EEG 预训练权重")
+ap.add_argument("--out-scale", type=float, default=1.0, help="关节头输出乘的固定标量 s（2603.08212）")
+ap.add_argument("--ddiff", action="store_true", help="沿腕带环相邻通道再差分（双差分）后再进模型")
 ap.add_argument("--env", action="store_true", help="add the log-RMS envelope stream (dual-stream fusion)")
 ap.add_argument("--frac-rot", action="store_true",
                 help="aug: blend each electrode with a neighbour by up to half a step (band worn between zones)")
@@ -94,6 +100,8 @@ else:
         m = mm.index.split == sp
         return m & (mm.index.generalization == gen) if gen else m
     rows = mm.index[np.logical_or.reduce([pick(s) for s in a.train_splits.split(",")])]
+    if a.stages:                                 # 场景微调:只留这些动作阶段
+        rows = rows[rows.stage.isin(a.stages.split(","))]; assert len(rows), a.stages
     tr_starts, tr_shift = train_windows(mm, rows, stride=a.stride)
     tr = loader(mm, tr_starts, tr_shift, a.bs, shuffle=True, workers=a.workers)
     val = loader(mm, official_windows(mm, mm.select("val")), batch_size=a.bs, workers=a.workers)
@@ -102,7 +110,16 @@ print(f"windows: train {len(tr.dataset)} (splits={a.train_splits}), val {len(val
       f"test {len(test.dataset)}", flush=True)
 
 protos = torch.from_numpy(np.load(Path(a.protos).expanduser())).float() if a.protos else None
-net = EMGFormerS(chan_stride=a.chan_stride, env=a.env, layers=a.layers, ffn=a.ffn,
+if a.arch.startswith("bd:"):
+    from bd_emg import BDEMG                            # noqa: E402
+    net = BDEMG(a.arch[3:], pretrained=not a.bd_scratch).to(dev)
+elif a.arch == "cbramod":
+    from cbramod_emg import CBraModEMG                  # noqa: E402
+    net = CBraModEMG().to(dev)
+    if a.init_eeg:
+        print("eeg init tensors", net.load_eeg(a.init_eeg), flush=True)
+else:
+    net = EMGFormerS(chan_stride=a.chan_stride, env=a.env, ddiff=a.ddiff, out_scale=a.out_scale, layers=a.layers, ffn=a.ffn,
                  n_protos=0 if protos is None else len(protos)).to(dev)
 if protos is not None:
     net.set_protos(protos.to(dev))

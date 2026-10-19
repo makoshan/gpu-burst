@@ -33,7 +33,7 @@ down)
   Z=$(zone); [ -n "$Z" ] || { echo "所有可用区都没开出来"; exit 1; }
   for i in 1 2 3 4 5 6; do $G ssh "$NAME" --project "$P" --zone "$Z" --quiet --command 'mkdir -p ~/stage' 2>/dev/null && break; sleep 20; done
   $G scp --project "$P" --zone "$Z" --quiet --recurse tasks/nc26 "$NAME":~/stage/code
-  $G ssh "$NAME" --project "$P" --zone "$Z" --quiet --command "sudo mkdir -p /root/nc26-g4 && sudo rm -rf /root/nc26-g4/code && sudo cp -r ~/stage/code /root/nc26-g4/code && sudo systemd-run --unit=nc26-g4 --collect --setenv=HOME=/root /bin/bash /root/nc26-g4/code/g4-run.sh '$BUCKET/$PREFIX' '$Z' && sleep 20 && sudo tail -3 /root/nc26-g4/run.log"
+  $G ssh "$NAME" --project "$P" --zone "$Z" --quiet --command "sudo mkdir -p /root/nc26-g4 && sudo rm -rf /root/nc26-g4/code && sudo cp -r ~/stage/code /root/nc26-g4/code && sudo systemd-run --unit=nc26-g4 --collect --setenv=HOME=/root ${RESUME:+--setenv=RESUME=$RESUME} ${MODE:+--setenv=MODE=$MODE} /bin/bash /root/nc26-g4/code/g4-run.sh '$BUCKET/$PREFIX' '$Z' && sleep 20 && sudo tail -3 /root/nc26-g4/run.log"
   echo "已起 $NAME @ $Z。进度: $0 status   结果: $0 pull   提前收: $0 down" ;;
 *)
   echo ">>> DRY RUN(加 --confirm-paid 且 GPU_BURST_LIVE=1 才真开机)"

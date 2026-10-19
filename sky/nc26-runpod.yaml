@@ -1,0 +1,56 @@
+# nc26 在 RunPod 5090 上:数据准备(同 nc26-dataprep.yaml,加精简数据)+ 3 轮训练测速。
+# 一台机器两件事:准备好的数据补齐到 R2(memmap-v1 缺的 joints.f16 + compact-v1),
+# 测速和 Vast 5090(116 s/轮)、5070 Ti(250 s/轮)同一口径:精简数据、3 轮、bs 64、种子 0。
+# 发射: sky/launch-nc26-runpod.sh(注入 R2 凭据;只走任务队列,跑完手动 sky down)
+name: nc26-runpod
+
+resources:
+  infra: runpod/US             # 原始数据在美国 S3;不限区域会挑到澳洲
+  accelerators: RTX5090:1
+  cpus: 6+                     # RunPod 单卡 5090 只给 6 vCPU / 46 GB(2026-10-03 目录)
+  disk_size: 720               # 原始 310 + memmap 224 + 精简 82 + 余量;dataprep.sh 要求可用 >= 650
+  image_id: docker:pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+
+envs:
+  TASK_ID: nc26-emgpose
+  R2_ENDPOINT: https://1df50a43697ddc762baf3b76d1dc9ef1.r2.cloudflarestorage.com
+  DEST: r2
+  COMPACT: "1"
+
+file_mounts:
+  /tmp/r2-common.sh: sky/lib/r2-common.sh
+  ~/neural-compet26/code: tasks/nc26
+
+setup: |
+  set -euo pipefail
+  source /tmp/r2-common.sh
+  ensure_s5cmd
+  (command -v git && command -v rsync && command -v curl) >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq git rsync curl)
+  pip install -q uv
+  [ -d ~/nc26env ] || uv venv -q -p 3.12 ~/nc26env
+  # 与 5070 Ti 同版本(torch 2.11 + cu128, benchopt 1.10),测速才可比
+  VIRTUAL_ENV=~/nc26env uv pip install -q torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+  VIRTUAL_ENV=~/nc26env uv pip install -q neuralset==0.3.1 neuralfetch==0.3.1 exca==0.5.29 eegdash==0.9.1 benchopt==1.10.0 mne mne-bids pandas numpy scipy scikit-learn
+  ~/nc26env/bin/python -c "import neuralfetch, eegdash, mne, torch, benchopt; print('env ok', torch.__version__, torch.cuda.get_device_name(0))"
+  nproc; free -g | sed -n 2p; df -h ~ | tail -1
+
+run: |
+  set -uo pipefail
+  source /tmp/r2-common.sh
+  bash ~/neural-compet26/code/dataprep.sh 2>&1 | tee ~/dataprep.log
+  rc=${PIPESTATUS[0]}
+  if [ "$rc" = 0 ]; then
+    cd ~/neural-compet26/code/train
+    # nproc 看不到容器 CPU 配额,按 cgroup 算
+    C=$(python3 -c "q,p=open('/sys/fs/cgroup/cpu.max').read().split(); print(int(q)//int(p))" 2>/dev/null || nproc)
+    W=$(( C - 1 )); [ "$W" -gt 16 ] && W=16; [ "$W" -lt 2 ] && W=2
+    echo "=== $(date -u +%T) speed test (workers=$W)"
+    ~/nc26env/bin/python -u train.py --compact --root ~/neural-compet26/compact --bench . \
+      --out ~/runs/speed3 --epochs 3 --bs 64 --stride 5000 --workers "$W" --seed 0 2>&1 \
+      | grep --line-buffered -v -E "it/s|warn" | tee ~/speed3.log
+    rc=${PIPESTATUS[0]}
+    r2_push ~/speed3.log "s3://gpu-burst-jobs/$TASK_ID/output/runpod-speed3.log" || true
+  fi
+  r2_push ~/dataprep.log "s3://gpu-burst-jobs/$TASK_ID/output/runpod-dataprep.log" || true
+  echo "NC26_RUNPOD_RC=$rc"
+  exit $rc
